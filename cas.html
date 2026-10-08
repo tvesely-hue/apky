@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CAS monitor — JSDH Štěpánov</title>
+<style>
+body{font-family:-apple-system,'Segoe UI',sans-serif;background:#0b1220;color:#e7ecf5;margin:0 auto;max-width:680px;padding:0 .8rem 2rem}
+header{background:linear-gradient(135deg,#7f1d1d,#dc2626);padding:1.4rem 1rem;border-radius:0 0 24px 24px;text-align:center}
+header h1{font-size:1.4rem;margin:.2rem 0}
+header p{font-size:.85rem;opacity:.9;margin:.1rem 0}
+.card{background:#151d2e;border:1px solid #232f47;border-radius:16px;padding:1rem;margin:1rem 0}
+.card b{color:#7dd3fc}
+.step{display:flex;align-items:flex-start;gap:.6rem;padding:.5rem 0;border-bottom:1px solid #232f47}
+.step:last-child{border-bottom:none}
+.step input{transform:scale(1.5);accent-color:#22c55e;margin-top:.2rem}
+.step span{color:#fff;font-weight:600}
+.step small{display:block;color:#8ea2c5;font-weight:400}
+.pill{display:inline-block;background:#0e3a24;color:#4ade80;font-size:.72rem;font-weight:700;padding:.15rem .55rem;border-radius:99px;margin:.1rem .2rem .1rem 0}
+a{color:#7dd3fc}
+.big{display:block;text-align:center;background:linear-gradient(135deg,#dc2626,#f59e0b);color:#fff;text-decoration:none;font-weight:800;padding:.9rem;border-radius:14px;margin:.8rem 0;font-size:1.05rem}
+</style>
+</head>
+<body>
+<header>
+ <div style="font-size:.75rem;letter-spacing:.25em;opacity:.85">JSDH ŠTĚPÁNOV N. SVRATKOU · JPO III</div>
+ <h1>🚒 CAS Monitor</h1>
+ <p>Sledování dotací na novou cisternovou stříkačku</p>
+</header>
+
+<main>
+<div class="card">
+ <b>📡 Automatické sledování</b>
+ <p style="font-size:.88rem;color:#94a3b8;margin:.4rem 0">Skript na serveru kontroluje <b>každý den</b> stránku HZS ČR. Při nové výzvě ti přijde <b>Telegram zpráva</b> — nemusíš na nic myslet.</p>
+ <span class="pill">hzscr.gov.cz kontrola denně</span>
+ <span class="pill">Telegram upozornění zdarma</span>
+ <span class="pill">0 kreditů</span>
+</div>
+
+<a class="big" href="https://hzscr.gov.cz/ucelove-investicni-dotace" target="_blank">🔗 Otevřít stránku výzev HZS ČR</a>
+
+<div class="card">
+ <b>✅ Checklist přípravy</b>
+ <div class="step"><input type="checkbox" id="c1"><label for="c1"><span>Najít doklad o první registraci CAS (do 31. 12. 2009)</span><small>Velký technický průkaz současné cisterny</small></label></div>
+ <div class="step"><input type="checkbox" id="c2"><label for="c2"><span>Ověřit u HZS kraje roli v plošném pokrytí (I./II. výjezd)</span><small>Dopis HZS Kraje Vysočina je v plánu (Část D)</small></label></div>
+ <div class="step"><input type="checkbox" id="c3"><label for="c3"><span>Předat plán starostovi + navrhnout usnesení</span><small>Část B + C v dokumentu CAS-balíček-JSDH.docx</small></label></div>
+ <div class="step"><input type="checkbox" id="c4"><label for="c4"><span>Změřit zbrojnici pro novou CAS</span><small>CAS 20: délka ~7–8 m, výška ~3 m</small></label></div>
+ <div class="step"><input type="checkbox" id="c5"><label for="c5"><span>Obec: přístup na Jednotný dotační portál MF</span><small>jdp2.mf.gov.cz</small></label></div>
+ <div class="step"><input type="checkbox" id="c6"><label for="c6"><span>Podpis přístupové smlouvy k rámcové dohodě</span><small>E-podpis starosty, text v příloze č. 2 výzvy</small></label></div>
+ <div class="step"><input type="checkbox" id="c7"><label for="c7"><span>Krajská dotace Vysočina (až 3 mil. Kč)</span><small>Odbor bezpečnosti a krizového řízení kraje</small></label></div>
+ <div class="step"><input type="checkbox" id="c8"><label for="c8"><span>Podat žádost po vyhlášení výzvy</span><small>jdp2.mf.gov.cz + DS HZS Kraje Vysočina</small></label></div>
+</div>
+
+<div class="card">
+ <b>📄 Dokumenty</b>
+ <p style="font-size:.88rem;color:#94a3b8">Plán, usnesení, dopisy a checklist: <b>CAS-balíček-JSDH.docx</b> (v chatu od 7. 10.)<br>
+ Plná verze návodu regulátoru apod. dle potřeby.</p>
+</div>
+
+<div class="card">
+ <b>☎️ Kontakty</b>
+ <p style="font-size:.85rem;color:#94a3b8">MV–GŘ HZS ČR: Ing. Petr Škopek, petr.skopek@hzscr.cz, 950 819 586<br>
+ Kraj Vysočina: Odbor bezpečnosti a krizového řízení (kr-vysocina.cz)<br>
+ Jednotný dotační portál: jdp2.mf.gov.cz</p>
+</div>
+</main>
+
+<script>
+document.querySelectorAll('.step input').forEach(cb=>{
+ const k='cas_'+cb.id;
+ cb.checked=localStorage.getItem(k)==='1';
+ cb.onchange=()=>localStorage.setItem(k,cb.checked?'1':'0');
+});
+</script>
+</body>
+</html>
