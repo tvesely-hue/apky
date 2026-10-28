@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Koupelna 60×120 – 3D model</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{background:#0b1220;color:#e5e9f0;font-family:-apple-system,'Segoe UI',Roboto,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  header{padding:10px 14px;background:linear-gradient(90deg,#1d4ed8,#3b82f6);font-weight:700;font-size:15px}
+  header small{display:block;font-weight:400;opacity:.85;font-size:11px}
+  #scene{flex:1;position:relative;touch-action:none}
+  canvas{display:block;width:100%;height:100%}
+  #panel{background:#151d2e;padding:10px 14px 16px;border-top:1px solid #24304a}
+  .row{display:flex;align-items:center;gap:10px;margin:8px 0}
+  .row label{flex:1;font-size:13px;color:#9fb0cc}
+  .row output{font-size:13px;font-weight:700;color:#fff;min-width:64px;text-align:right}
+  input[type=range]{flex:1.6;accent-color:#3b82f6;height:30px}
+  .seg{display:flex;gap:6px;margin:8px 0}
+  .seg button{flex:1;padding:9px 4px;border:0;border-radius:10px;background:#0f1729;color:#9fb0cc;font-size:12px;font-weight:600}
+  .seg button.on{background:linear-gradient(90deg,#1d4ed8,#3b82f6);color:#fff}
+  .info{font-size:11px;color:#6c7d9c;margin-top:8px;line-height:1.5}
+  #hint{position:absolute;top:8px;left:8px;background:rgba(11,18,32,.75);padding:6px 10px;border-radius:8px;font-size:11px;color:#9fb0cc}
+</style>
+</head>
+<body>
+<header>🛁 Koupelna – kachličky 60×120<small>3D model • uprav rozměry a formát</small></header>
+<div id="scene"><div id="hint">👆 táhnutím otáčíš, dvěma prsty zoom</div></div>
+<div id="panel">
+  <div class="seg" id="fmt">
+    <button data-v="h" class="on">Vodorovně (60×120)</button>
+    <button data-v="v">Svisle (120×60)</button>
+  </div>
+  <div class="row"><label>Šířka stěny A</label><input type="range" id="wA" min="100" max="400" value="172" step="1"><output id="oA">172 cm</output></div>
+  <div class="row"><label>Šířka stěny B</label><input type="range" id="wB" min="100" max="400" value="170" step="1"><output id="oB">170 cm</output></div>
+  <div class="row"><label>Výška pokládky</label><input type="range" id="h" min="120" max="300" value="240" step="5"><output id="oH">240 cm</output></div>
+  <div class="seg" id="col">
+    <button data-v="#c8cdd4" class="on">Svědá šedá</button>
+    <button data-v="#e8e2d6">Béžová</button>
+    <button data-v="#7d8a96">Grafit</button>
+    <button data-v="#3f4a56">Tmavá</button>
+  </div>
+  <div class="info" id="calc"></div>
+</div>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+const TW=60, TH=120, G=0.15; // dlažba 60x120 cm, spára 1,5 mm
+let fmt='h', colA='#c8cdd4';
+const W={a:172,b:170,h:240};
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0b1220);
+const camera=new THREE.PerspectiveCamera(50,1,1,2000);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+document.getElementById('scene').appendChild(renderer.domElement);
+const controls={rotY:0.7,rotX:0.35,dist:520,px:0,py:0};
+function resize(){const el=document.getElementById('scene');camera.aspect=el.clientWidth/el.clientHeight;camera.updateProjectionMatrix();renderer.setSize(el.clientWidth,el.clientHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));}
+addEventListener('resize',resize);
+function build(){
+  while(scene.children.length)scene.remove(scene.children[0]);
+  scene.add(new THREE.AmbientLight(0xffffff,0.75));
+  const dl=new THREE.DirectionalLight(0xffffff,0.9);dl.position.set(200,400,300);scene.add(dl);
+  const mk=(wA,wB,h,which)=>{
+    const g=new THREE.Group();
+    const tileW=fmt==='h'?TH:TW, tileH=fmt==='h'?TW:TH;
+    const mat=new THREE.MeshStandardMaterial({color:colA,roughness:0.25,metalness:0.05});
+    const lines=new THREE.LineBasicMaterial({color:0x0b1220,transparent:true,opacity:0.35});
+    const nx=Math.ceil(wA/tileW),ny=Math.ceil(h/tileH);
+    for(let i=0;i<nx;i++)for(let j=0;j<ny;j++){
+      const w=Math.min(tileW,wA-i*tileW), hh=Math.min(tileH,h-j*tileH);
+      if(w<=0||hh<=0)continue;
+      const t=new THREE.Mesh(new THREE.PlaneGeometry(w-2*G,hh-2*G),mat);
+      t.position.set(i*tileW+w/2,j*tileH+hh/2,0);g.add(t);
+      const e=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(w,hh)),lines);
+      e.position.copy(t.position);g.add(e);
+    }
+    const bx=new THREE.Mesh(new THREE.PlaneGeometry(wA,h),new THREE.MeshStandardMaterial({color:0x1a2336}));
+    bx.position.set(wA/2,h/2,-0.5);g.add(bx);
+    if(which==='A'){g.position.set(0,0,0);}
+    else{g.position.set(0,0,0);g.rotation.y=Math.PI/2;g.scale.x=-1;}
+    return g;
+  };
+  const wallA=mk(W.a,W.b,W.h,'A');
+  const wallB=mk(W.b,W.a,W.h,'B');
+  wallB.position.set(W.a,0,0);
+  scene.add(wallA);scene.add(wallB);
+  // podlaha
+  const fl=new THREE.Mesh(new THREE.PlaneGeometry(W.a,W.b),new THREE.MeshStandardMaterial({color:0x3a3126}));
+  fl.rotation.x=-Math.PI/2;fl.position.set(W.a/2,0,W.b/2);scene.add(fl);
+  // rámeček podlahy
+  const eg=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(W.a,W.b)),new THREE.LineBasicMaterial({color:0x3b82f6}));
+  eg.rotation.x=-Math.PI/2;eg.position.set(W.a/2,0.5,W.b/2);scene.add(eg);
+}
+function render(){
+  const cx=W.a/2, cy=W.h/2, cz=W.b/2;
+  const r=controls.dist;
+  camera.position.set(cx+r*Math.cos(controls.rotX)*Math.sin(controls.rotY), cy+r*Math.sin(controls.rotX), cz+r*Math.cos(controls.rotX)*Math.cos(controls.rotY));
+  camera.lookAt(cx,cy,0);
+  renderer.render(scene,camera);
+  requestAnimationFrame(render);
+}
+function update(){
+  W.a=+document.getElementById('wA').value;W.b=+document.getElementById('wB').value;W.h=+document.getElementById('h').value;
+  document.getElementById('oA').textContent=W.a+' cm';
+  document.getElementById('oB').textContent=W.b+' cm';
+  document.getElementById('oH').textContent=W.h+' cm';
+  const fmtDim=fmt==='h'?'120×60':'60×120';
+  const nA=Math.ceil(W.a/(fmt==='h'?TH:TW))*Math.ceil(W.h/(fmt==='h'?TW:TH));
+  const nB=Math.ceil(W.b/(fmt==='h'?TH:TW))*Math.ceil(W.h/(fmt==='h'?TW:TH));
+  const m2=(W.a*W.h+W.b*W.h)/10000;
+  // nakupovaný počet: celé kusy s odpady na řezu -> spočítáme plochou + rezerva
+  const perTile=(TH*TW)/10000;
+  const need=Math.ceil(m2*1.1/perTile);
+  document.getElementById('calc').innerHTML=`Stěna A: ${Math.ceil(W.a/(fmt==='h'?TH:TW))} sloupců × ${Math.ceil(W.h/(fmt==='h'?TW:TH))} řad = ${nA} ks<br>Stěna B: ${nB} ks<br>Rozloha: ${m2.toFixed(2)} m² → doporučuji koupit ≈ ${need} ks (10 % rezerva)`;
+  build();resize();
+}
+// ovládání
+let touch={};
+document.getElementById('scene').addEventListener('touchstart',e=>{if(e.touches.length===1){touch={x:e.touches[0].clientX,y:e.touches[0].clientY,ry:controls.rotY,rx:controls.rotX};}else{touch={d:Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY),dist:controls.dist};}},{passive:true});
+document.getElementById('scene').addEventListener('touchmove',e=>{if(e.touches.length===1&&touch.x!==undefined){controls.rotY=touch.ry+(e.touches[0].clientX-touch.x)*0.006;controls.rotX=Math.max(0.02,Math.min(1.4,touch.rx+(e.touches[0].clientY-touch.y)*0.006));}else if(e.touches.length===2&&touch.d){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);controls.dist=Math.max(150,Math.min(1200,touch.dist*touch.d/d));}},{passive:true});
+document.getElementById('scene').addEventListener('wheel',e=>{controls.dist=Math.max(150,Math.min(1200,controls.dist+e.deltaY));},{passive:true});
+['wA','wB','h'].forEach(id=>document.getElementById(id).addEventListener('input',update));
+function seg(id,cb){const el=document.getElementById(id);el.addEventListener('click',e=>{if(e.target.tagName!=='BUTTON')return;[...el.children].forEach(b=>b.classList.remove('on'));e.target.classList.add('on');cb(e.target.dataset.v);});}
+seg('fmt',v=>{fmt=v;update();});
+seg('col',v=>{colA=v;update();});
+update();render();
+</script>
+</body>
+</html>
