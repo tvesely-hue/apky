@@ -100,34 +100,25 @@ function testSound(){
   } catch(e){}
 }
 
-/* Web Audio API — odemkne se gestem (unlockAudio), pak hraje bez dalších omezení */
-let audioCtx = null;
+/* přehrávač — audio element (funguje bez omezení CORS, na iOS spolehlivý) */
 function unlockAudio(){
-  if (audioCtx) return;
   try {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    g.gain.value = 0.001;
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start(); o.stop(audioCtx.currentTime + 0.05);
-    audioCtx.resume();
-    setStatus('Hlas odemčen ✅');
-  } catch(e){ setStatus('Hlas nelze odemknout: ' + e.message); }
+    player.src = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent('Hlasový Hermes je připraven');
+    player.volume = 0.3;
+    player.play().then(()=>{ setStatus('Hlas odemčen ✅'); }).catch(e=>{ setStatus('Hlas zablokovaný — klepni znovu'); });
+  } catch(e){}
 }
 
 async function playChain(urls, onFail){
   try {
     for (const u of urls){
-      const r = await fetch(u);
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const buf = await r.arrayBuffer();
-      const decoded = await audioCtx.decodeAudioData(buf);
-      const src = audioCtx.createBufferSource();
-      src.buffer = decoded;
-      src.connect(audioCtx.destination);
-      src.start();
-      await new Promise((res) => { src.onended = res; });
+      await new Promise((res,rej)=>{
+        player.src = u;
+        player.onended = res;
+        player.onerror = () => rej(new Error('playback'));
+        player.volume = 1;
+        const pp = player.play(); if (pp) pp.catch(rej);
+      });
     }
   } catch(e){ onFail(); return false; }
 }
@@ -140,7 +131,7 @@ function restartListening(){
   setStatus('Mluv…');
   try { rec && rec.stop(); } catch(_){}
   setTimeout(() => {
-    if (listening) { try { rec.start(); } catch(_){ setTimeout(() => { if (listening) startRec(); }, 300); } }
+    if (listening) startRec();
   }, 900);
 }
 
