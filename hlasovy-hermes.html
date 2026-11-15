@@ -84,13 +84,22 @@ function addMsg(cls, text){
 }
 function setStatus(t){ statusEl.textContent = t; }
 
-/* ====== HLAS: audio element + Google TTS, zvuky se stáhnou DOPŘEDU (při gestu)
-   a pak přehrají z lokální paměti — na iOS je to jediný spolehlivý mechanismus ====== */
-const player = new Audio();
-let speakQueue = [];
+/* ====== HLAS: verze 8 — NOVÝ Audio element pro každý kus + zpoždění po vypnutí mikrofonu ====== */
+/* iOS: sdílený Audio element po rec.stop() nehrá (mikrofon drží audio session, uvolní se až za pár ms).
+   Proto: každý kus = nový Audio + play až 350 ms po vypnutí mikrofonu. */
 
 function ttsUrl(text){
   return 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent(text.slice(0,190));
+}
+
+function playParts(parts, i){
+  if (i >= parts.length) { restartListening(); return; }
+  const p = new Audio(ttsUrl(parts[i]));
+  p.onended = () => { playParts(parts, i + 1); };
+  p.onerror = () => { setStatus('🔊 Nepovedlo se přehrát'); restartListening(); };
+  p.volume = 1;
+  const pp = p.play();
+  if (pp) pp.catch(e => { setStatus('🔊 Nepovedlo se přehrát: ' + (e.message||'')); restartListening(); });
 }
 
 function speakNow(text){
@@ -104,19 +113,8 @@ function speakNow(text){
     else cur += s;
   }
   if (cur) parts.push(cur);
-  // Verze 8: PRVNÍ kus se přehraje SYNCHRONNĚ tady (v gestu klepnutí) — iOS pak řetěz dovolí
-  speakQueue = parts;
-  playChunk(0);
-}
-
-function playChunk(i){
-  if (i >= speakQueue.length) { restartListening(); return; }
-  player.src = speakQueue[i];
-  player.onended = () => { playChunk(i + 1); };
-  player.onerror = () => { setStatus('🔊 Nepovedlo se přehrát'); restartListening(); };
-  player.volume = 1;
-  const pp = player.play();
-  if (pp) pp.catch(() => { setStatus('🔊 Nepovedlo se přehrát'); restartListening(); });
+  // 350 ms po rec.stop() — iOS potřebuje uvolnit audio session od mikrofonu
+  setTimeout(() => playParts(parts, 0), 350);
 }
 
 function testSound(){
