@@ -97,11 +97,18 @@ function playParts(parts, i){
   if (i >= parts.length) { restartListening(); return; }
   const p = new Audio(ttsUrl(parts[i]));
   p.referrerPolicy = 'no-referrer';   // GOOGLE BLOKUJE podle Refereru (GitHub Pages) → vrací 404
-  p.onended = () => { playParts(parts, i + 1); };
-  p.onerror = () => { setStatus('🔊 Nepovedlo se přehrát'); restartListening(); };
   p.volume = 1;
+  // iOS bug: onended se nezavolá vždy — fallback: po duration + 2 s pokračujeme vždy
+  let ended = false;
+  const finish = () => { if (ended) return; ended = true; try { p.pause(); } catch(_){} playParts(parts, i + 1); };
+  p.onended = finish;
+  p.onerror = () => { setStatus('🔊 Nepovedlo se přehrát'); finish(); };
+  p.addEventListener('loadedmetadata', () => {
+    const t = (p.duration || 5) + 2;
+    setTimeout(finish, t * 1000);
+  });
   const pp = p.play();
-  if (pp) pp.catch(e => { setStatus('🔊 Nepovedlo se přehrát: ' + (e.message||'')); restartListening(); });
+  if (pp) pp.catch(e => { setStatus('🔊 Nepovedlo se přehrát: ' + (e.message||'')); finish(); });
 }
 
 function speakNow(text){
