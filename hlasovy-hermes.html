@@ -122,7 +122,8 @@ function playParts(parts, i, myId){
   p.onended = finish;
   p.onerror = () => { setStatus('🔊 Nepovedlo se přehrát'); finish(); };
   p.addEventListener('loadedmetadata', () => {
-    const t = (p.duration || 5) + 2;
+    // Google TTS stream = duration Infinity → fallback nesmí být 0 ms (toInt32(Infinity)=0 → přeruší hned!)
+    const t = (isFinite(p.duration) && p.duration > 0) ? p.duration + 2 : 12;
     timer = setTimeout(finish, t * 1000);
   });
   const pp = p.play();
