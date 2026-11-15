@@ -350,15 +350,34 @@ function startRec(){
   rec.interimResults = false;
   rec.onstart = () => { setStatus('Mluv…'); };
   rec.onresult = (e) => {
+    recWatchdog = 0;
     const t = e.results[e.results.length-1][0].transcript.trim();
     if (t) ask(t);
   };
   rec.onerror = (e) => { if (e.error==='not-allowed') addMsg('ai','Musíš povolit mikrofon (Nastavení Safari → Mikrofon).'); };
+  /* iOS: stejnou instanci po stop() znovu nespustí — VŽDY NOVÁ instance (nová funkce) */
   rec.onend = () => {
-    if (listening && !speaking) { setTimeout(() => { if (listening && !speaking) { try { rec.start(); } catch(_){} } }, 300); }
+    if (listening && !speaking) { setTimeout(() => { if (listening && !speaking) startRec(); }, 300); }
   };
-  rec.start();
+  try { rec.start(); } catch(_){
+    setTimeout(() => { if (listening && !speaking) startRec(); }, 1500);
+  }
 }
+
+/* WATCHDOG: když Safari poslech tiše zabije (žádný onend, žádný výsledek), po 15 s ticha ho restartujeme */
+let recWatchdog = 0;
+setInterval(() => {
+  if (listening && !speaking) {
+    recWatchdog++;
+    if (recWatchdog >= 15) {
+      recWatchdog = 0;
+      try { rec && rec.stop(); } catch(_){}
+      setTimeout(() => { if (listening && !speaking) startRec(); }, 500);
+    }
+  } else {
+    recWatchdog = 0;
+  }
+}, 1000);
 
 function toggleMic(){
   if (!SR) { addMsg('ai','Tvůj prohlížeč nepodporuje rozpoznávání řeči. Otevř v Safari (iPhone) nebo Chrome.'); return; }
