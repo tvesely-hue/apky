@@ -129,7 +129,7 @@ function testSound(){
 
 /* po přehrání odpovědi se poslech sám obnoví — nemusíš vypínat/zapínat mikrofon */
 function restartListening(){
-  if (!listening) return;
+  if (!listening) { setStatus('✅ Přečteno — klikni na 🎤 pro další otázku'); return; }
   setStatus('Mluv…');
   try { rec && rec.stop(); } catch(_){}
   setTimeout(() => {
