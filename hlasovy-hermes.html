@@ -100,18 +100,22 @@ function testSound(){
   } catch(e){}
 }
 
+/* stáhni zvuk dopředu a přehraj jako blob — na iPhonu spolehlivější než přímý odkaz */
 async function playChain(urls, onFail){
   try {
     for (const u of urls){
+      const r = await fetch(u);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const blob = await r.blob();
+      player.src = URL.createObjectURL(blob);
+      player.volume = 1;
       await new Promise((res,rej)=>{
-        player.src = u;
         player.onended = res;
-        player.onerror = rej;
-        player.volume = 1;
+        player.onerror = () => rej(new Error('playback'));
         const pp = player.play(); if (pp) pp.catch(rej);
       });
     }
-  } catch(e){ setStatus('🔊 Hlas selhal: ' + (e && e.message ? e.message : 'nelze přehrát')); onFail(); }
+  } catch(e){ onFail(); return false; }
 }
 function fallbackTts(text){
   try { speechSynthesis.speak(new SpeechSynthesisUtterance(text)); } catch(e){}
@@ -136,6 +140,7 @@ function speakText(text){
     parts.push(text.slice(i, Math.min(i+185, text.length)));
   }
   playChain(parts.map(p => 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent(p)), () => {
+     fallbackTts(text);
      statusEl.textContent = listening ? 'Mluv…' : 'Hotovo';
      restartListening();
   }).then(() => { restartListening(); }).catch(() => {
