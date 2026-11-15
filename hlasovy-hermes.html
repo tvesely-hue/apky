@@ -95,6 +95,7 @@ function ttsUrl(text){
 function playParts(parts, i){
   if (i >= parts.length) { restartListening(); return; }
   const p = new Audio(ttsUrl(parts[i]));
+  p.referrerPolicy = 'no-referrer';   // GOOGLE BLOKUJE podle Refereru (GitHub Pages) → vrací 404
   p.onended = () => { playParts(parts, i + 1); };
   p.onerror = () => { setStatus('🔊 Nepovedlo se přehrát'); restartListening(); };
   p.volume = 1;
@@ -118,8 +119,9 @@ function speakNow(text){
 }
 
 function testSound(){
-  // Přímo audio element — synchronně v gestu (blob fetch na iOS blokuje CORS)
+  // Přímo audio element — synchronně v gestu + bez Refereru (Google blokuje podle něj)
   const p = new Audio(ttsUrl('Test zvuku. Slyšíš mě po celou větu?'));
+  p.referrerPolicy = 'no-referrer';
   p.volume = 1;
   p.play().then(()=>{ setStatus('Zvuk hraje ✅'); }).catch(e=>{ setStatus('Nepovedlo se přehrát: ' + (e.message||'')); });
 }
