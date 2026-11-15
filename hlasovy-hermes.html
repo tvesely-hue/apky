@@ -37,6 +37,7 @@
   <label style="font-size:13px;">OpenRouter API key (začíná sk-or-)</label>
   <input id="key" type="password" placeholder="vlož klíč">
   <button onclick="saveKey()">Uložit klíč</button>
+  <button onclick="testSound()" style="background:#e6b800;">🎵 Test zvuku — klepni ať uslyšíš pípnutí</button>
 </div>
 
 <div id="chat"></div>
@@ -83,10 +84,19 @@ let audioUnlocked = false;
 function unlockAudio(){
   if (audioUnlocked) return;
   try {
-    player.src = 'data:audio/wav;base64,UklGRl4RAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YToRAAAAAAAA';
-    player.volume = 0.01;
+    player.src = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent('Hlasový Hermes je připraven');
+    player.volume = 0.3;
     const p1 = player.play();
-    if (p1) p1.then(()=>{ audioUnlocked = true; }).catch(e=>{ setStatus('Hlas zablokovaný — klepni na tlačítko znovu'); });
+    if (p1) p1.then(()=>{ audioUnlocked = true; setStatus('Hlas odemčen ✅'); }).catch(e=>{ setStatus('Hlas zablokovaný — klepni na tlačítko znovu'); });
+  } catch(e){}
+}
+
+function testSound(){
+  unlockAudio();
+  try {
+    player.src = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent('Test zvuku. Pokud tohle slyšíš, je všechno v pořádku.');
+    player.volume = 1;
+    player.play().then(()=>{ setStatus('Zvuk hraje ✅'); }).catch(e=>{ setStatus('Nepovedlo se přehrát: ' + (e.message||'')); });
   } catch(e){}
 }
 
