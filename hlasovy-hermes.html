@@ -97,7 +97,7 @@ async function ask(text){
       })
     });
     const j = await r.json();
-    const out = j.candidates?.[0]?.content?.parts?.[0]?.text;
+    const out = j.choices?.[0]?.message?.content;
     if (!out) throw new Error(JSON.stringify(j).slice(0,120));
     addMsg('ai', out);
     speak(out);
