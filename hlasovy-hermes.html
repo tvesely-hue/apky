@@ -348,13 +348,20 @@ function startRec(){
   rec.lang = 'cs-CZ';
   rec.continuous = true;
   rec.interimResults = false;
-  rec.onstart = () => { setStatus('Mluv…'); };
+  rec.onstart = () => { setStatus('Mluv…'); recWatchdog = 0; };
+  /* iOS: reset watchdogu i při každém zvuku — ať dlouhá souvislá věta neumře po 15 s */
+  rec.onsoundstart = () => { recWatchdog = 0; };
+  rec.onspeechstart = () => { recWatchdog = 0; };
+  rec.onspeechend = () => { recWatchdog = 0; };
   rec.onresult = (e) => {
     recWatchdog = 0;
     const t = e.results[e.results.length-1][0].transcript.trim();
     if (t) ask(t);
   };
-  rec.onerror = (e) => { if (e.error==='not-allowed') addMsg('ai','Musíš povolit mikrofon (Nastavení Safari → Mikrofon).'); };
+  rec.onerror = (e) => {
+    recWatchdog = 0;
+    if (e.error==='not-allowed') addMsg('ai','Musíš povolit mikrofon (Nastavení Safari → Mikrofon).');
+  };
   /* iOS: stejnou instanci po stop() znovu nespustí — VŽDY NOVÁ instance (nová funkce) */
   rec.onend = () => {
     if (listening && !speaking) { setTimeout(() => { if (listening && !speaking) startRec(); }, 300); }
