@@ -85,19 +85,32 @@ function addMsg(cls, text){
 function setStatus(t){ statusEl.textContent = t; }
 
 /* ====== HLAS: speechSynthesis (iOS nativní hlas — žádná síť, žádný CORS, žádný klíč) ====== */
+/* iOS 3 známé záludnosti:
+   1) utterance uložená jen v lokální proměnné se zlikviduje GC a mluvení se uprostřed PŘERUŠÍ — držíme globální referenci
+   2) mikrofon se nesmí spustit, dokud mluvení nedoběhne — jinak mikrofon "sebere" audio session
+   3) dlouhé texty iOS utne — čteme po větách */
+let currentUtterance = null;
+
 function speakNow(text){
   try { rec && rec.stop(); } catch(_){}
   setStatus('🔴 Odpovídám…');
   try {
     speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'cs-CZ';
-    u.rate = 1.0;
-    const cz = speechSynthesis.getVoices().find(v => v.lang.toLowerCase().startsWith('cs'));
-    if (cz) u.voice = cz;
-    u.onend = () => { restartListening(); };
-    u.onerror = (e) => { setStatus('🔊 Hlas: ' + (e.error || '?')); restartListening(); };
-    speechSynthesis.speak(u);
+    // rozdělíme na věty / kusy max ~200 znaků
+    const parts = text.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) || [text];
+    let idx = 0;
+    const speakNext = () => {
+      if (idx >= parts.length) { restartListening(); return; }
+      currentUtterance = new SpeechSynthesisUtterance(parts[idx]);
+      currentUtterance.lang = 'cs-CZ';
+      currentUtterance.rate = 1.0;
+      const cz = speechSynthesis.getVoices().find(v => v.lang.toLowerCase().startsWith('cs'));
+      if (cz) currentUtterance.voice = cz;
+      currentUtterance.onend = () => { idx++; speakNext(); };
+      currentUtterance.onerror = (e) => { setStatus('🔊 Hlas: ' + (e.error || '?')); restartListening(); };
+      speechSynthesis.speak(currentUtterance);
+    };
+    speakNext();
   } catch(e){
     setStatus('🔊 Hlas nelze: ' + (e.message || '?'));
     restartListening();
@@ -117,7 +130,7 @@ function restartListening(){
   try { rec && rec.stop(); } catch(_){}
   setTimeout(() => {
     if (listening) startRec();
-  }, 900);
+  }, 1200);
 }
 
 /* ====== ZPRÁVY / API ====== */
