@@ -100,7 +100,7 @@ function playParts(parts, i){
   p.volume = 1;
   // iOS bug: onended se nezavolá vždy — fallback: po duration + 2 s pokračujeme vždy
   let ended = false;
-  const finish = () => { if (ended) return; ended = true; try { p.pause(); } catch(_){} playParts(parts, i + 1); };
+  const finish = () => { if (ended) return; ended = true; playParts(parts, i + 1); };
   p.onended = finish;
   p.onerror = () => { setStatus('🔊 Nepovedlo se přehrát'); finish(); };
   p.addEventListener('loadedmetadata', () => {
@@ -108,7 +108,12 @@ function playParts(parts, i){
     setTimeout(finish, t * 1000);
   });
   const pp = p.play();
-  if (pp) pp.catch(e => { setStatus('🔊 Nepovedlo se přehrát: ' + (e.message||'')); finish(); });
+  if (pp) pp.catch(e => {
+    // "interrupted by pause/load" = nezávažné (iOS interno) — jen když se opravdu nepovedlo start
+    if (e.message && e.message.indexOf('interrupted') >= 0) return;
+    setStatus('🔊 Nepovedlo se přehrát: ' + (e.message||''));
+    finish();
+  });
 }
 
 function speakNow(text){
