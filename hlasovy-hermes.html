@@ -142,6 +142,7 @@ function speakNow(text){
   speakId++;   // nová generace — starý timer nebude pokračovat
   const myId = speakId;
   speaking = true;   // blokace restartu mikrofonu během mluvení
+  recActive = false;  // stará instance končí — nechcem, aby blokovala startRec po odpovědi
   try { rec && rec.stop(); } catch(_){}
   setStatus('🔴 Odpovídám…');
   const sents = text.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) || [text];
@@ -170,6 +171,7 @@ function testSound(){
 /* po přehrání odpovědi se poslech sám obnoví — nemusíš vypínat/zapínat mikrofon */
 function restartListening(){
   speaking = false;   // mluvení skončilo — mikrofon se může zase zapnout
+  recActive = false;  // POVINNÉ vynulování — jinak mrtvá instance blokuje startRec navždy
   // HANDS-FREE: poslech se sám zapne VŽDY (klepnutí na 🎤 je potřeba jen na úplném startu)
   listening = true;
   micBtn.classList.add('listening');
@@ -385,6 +387,7 @@ setInterval(() => {
     recWatchdog++;
     if (recWatchdog >= 15) {
       recWatchdog = 0;
+      recActive = false;   // iOS tiše zabyl poslech bez onend — jinak startRec navždy blokován
       try { rec && rec.stop(); } catch(_){}
       setTimeout(() => { if (listening && !speaking) startRec(); }, 500);
     }
