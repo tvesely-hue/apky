@@ -6,8 +6,6 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Hlasový Hermes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<link rel="apple-touch-icon" href="hlasovy-hermes-icon.png">
-<link rel="icon" href="hlasovy-hermes-icon.png">
 <title>Hlasový Hermes</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -18,7 +16,7 @@
   .msg { max-width:85%; padding:10px 14px; border-radius:16px; font-size:15px; line-height:1.4; word-wrap:break-word; }
   .me { align-self:flex-end; background:#2b6cb0; border-bottom-right-radius:4px; }
   .ai { align-self:flex-start; background:#232a35; border-bottom-left-radius:4px; }
-  .playBtn { margin-top:8px; padding:8px 16px; border-radius:20px; border:none; background:#2b6cb0; color:#fff; font-size:13px; }
+  .playBtn { margin-top:8px; padding:10px 20px; border-radius:20px; border:none; background:#2b6cb0; color:#fff; font-size:14px; font-weight:600; }
   footer { padding:18px; background:#161a22; display:flex; flex-direction:column; align-items:center; gap:10px; }
   #micBtn { width:88px; height:88px; border-radius:50%; border:none; background:#2b6cb0; color:#fff; font-size:40px; box-shadow:0 4px 18px rgba(43,108,176,.45); }
   #micBtn.listening { background:#e53e3e; animation:pulse 1.2s infinite; }
@@ -37,7 +35,7 @@
   <label style="font-size:13px;">OpenRouter API key (začíná sk-or-)</label>
   <input id="key" type="password" placeholder="vlož klíč">
   <button onclick="saveKey()">Uložit klíč</button>
-  <button onclick="testSound()" style="background:#e6b800;">🎵 Test zvuku — klepni ať uslyšíš pípnutí</button>
+  <button onclick="testSound()" style="background:#e6b800;">🎵 Test zvuku</button>
 </div>
 
 <div id="chat"></div>
@@ -70,7 +68,8 @@ function addMsg(cls, text){
     const b = document.createElement('button');
     b.className = 'playBtn';
     b.textContent = '🔊 Přečíst';
-    b.onclick = () => { speakText(text); };
+    // PRŮMÝ: jeden klepnutí = přímé přehrání audio elementu, bez řetězců
+    b.onclick = () => { speakNow(text); };
     d.appendChild(b);
   }
   chatEl.appendChild(d);
@@ -78,53 +77,46 @@ function addMsg(cls, text){
 }
 function setStatus(t){ statusEl.textContent = t; }
 
-/* ====== HLAS: audio přehrávač + Google TTS + fallback na prohlížečový hlas ====== */
+/* ====== HLAS: audio element + Google TTS (rozdělíme na kusy do ~190 znaků) ====== */
 const player = new Audio();
-let audioUnlocked = false;
-function unlockAudio(){
-  if (audioUnlocked) return;
-  try {
-    player.src = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent('Hlasový Hermes je připraven');
-    player.volume = 0.3;
-    const p1 = player.play();
-    if (p1) p1.then(()=>{ audioUnlocked = true; setStatus('Hlas odemčen ✅'); }).catch(e=>{ setStatus('Hlas zablokovaný — klepni na tlačítko znovu'); });
-  } catch(e){}
+player.onended = () => { restartListening(); };
+player.onerror = (e) => { setStatus('🔊 Chyba přehrávání: ' + (e && e.message ? e.message : 'nelze')); };
+
+function ttsUrl(text){ return 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent(text.slice(0,190)); }
+
+function speakNow(text){
+  try { rec && rec.stop(); } catch(_){}
+  setStatus('🔴 Odpovídám…');
+  // rozdělíme na kusy do ~190 znaků
+  let parts = [];
+  for (let i=0;i<text.length && parts.length<5;i+=185){
+    parts.push(text.slice(i, Math.min(i+185, text.length)));
+  }
+  player.volume = 1;
+  player.src = ttsUrl(parts[0]);
+  const pp = player.play();
+  if (pp) pp.catch(e => { setStatus('🔊 Nepovedlo se přehrát: ' + (e.message || '?')); });
+  if (parts.length > 1) {
+    player.onended = () => {
+      if (parts.length > 1) {
+        parts = parts.slice(1);
+        player.src = ttsUrl(parts[0]);
+        player.play().catch(()=>{});
+      } else {
+        player.onended = () => { restartListening(); };
+      }
+    };
+  }
 }
 
 function testSound(){
-  unlockAudio();
   try {
-    player.src = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent('Test zvuku. Pokud tohle slyšíš, je všechno v pořádku.');
     player.volume = 1;
+    player.src = ttsUrl('Test zvuku. Pokud tohle slyšíš, je všechno v pořádku.');
     player.play().then(()=>{ setStatus('Zvuk hraje ✅'); }).catch(e=>{ setStatus('Nepovedlo se přehrát: ' + (e.message||'')); });
   } catch(e){}
 }
 
-/* přehrávač — audio element (funguje bez omezení CORS, na iOS spolehlivý) */
-function unlockAudio(){
-  try {
-    player.src = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent('Hlasový Hermes je připraven');
-    player.volume = 0.3;
-    player.play().then(()=>{ setStatus('Hlas odemčen ✅'); }).catch(e=>{ setStatus('Hlas zablokovaný — klepni znovu'); });
-  } catch(e){}
-}
-
-async function playChain(urls, onFail){
-  try {
-    for (const u of urls){
-      await new Promise((res,rej)=>{
-        player.src = u;
-        player.onended = res;
-        player.onerror = () => rej(new Error('playback'));
-        player.volume = 1;
-        const pp = player.play(); if (pp) pp.catch(rej);
-      });
-    }
-  } catch(e){ onFail(); return false; }
-}
-function fallbackTts(text){
-  try { speechSynthesis.speak(new SpeechSynthesisUtterance(text)); } catch(e){}
-}
 /* po přehrání odpovědi se poslech sám obnoví — nemusíš vypínat/zapínat mikrofon */
 function restartListening(){
   if (!listening) return;
@@ -134,25 +126,6 @@ function restartListening(){
     if (listening) startRec();
   }, 900);
 }
-
-function speakText(text){
-  unlockAudio();
-  // během přehrávání poslech vypni — Safari dva zvuky/mikrofon zároveň neumí
-  try { rec && rec.stop(); } catch(_){}
-  setStatus('🔴 Odpovídám…');
-  let parts = [];
-  for (let i=0;i<text.length && parts.length<5;i+=185){
-    parts.push(text.slice(i, Math.min(i+185, text.length)));
-  }
-  playChain(parts.map(p => 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent(p)), () => {
-     fallbackTts(text);
-     statusEl.textContent = listening ? 'Mluv…' : 'Hotovo';
-     restartListening();
-  }).then(() => { restartListening(); }).catch(() => {
-     statusEl.textContent = '🔊 Klepni na tlačítko Přečíst u odpovědi';
-  });
-}
-window.__plain = '';
 
 /* ====== ZPRÁVY / API ====== */
 /* zjištění polohy (GPS) — pro počasí */
@@ -182,7 +155,7 @@ async function weatherData(){
 let history = [];
 
 async function ask(text){
-  if (!key) { addMsg('ai','Nejdřív vlož OpenRouter key (⚙️ vpravo nahoře).'); speakText('Nejdřív vlož klíč OpenRouter. Nahoře je ozubené kolo.'); return; }
+  if (!key) { addMsg('ai','Nejdřív vlož OpenRouter key (⚙️ vpravo nahoře).'); speakNow('Nejdřív vlož klíč OpenRouter. Nahoře je ozubené kolo.'); return; }
   addMsg('me', text);
   setStatus('🤔 Přemýšlím…');
   const t = text.toLowerCase();
@@ -220,12 +193,10 @@ async function ask(text){
     history.push({ role:'assistant', content: out });
     if (history.length > 12) history = history.slice(-12);
     addMsg('ai', out);
-    window.__plain = out;
-    speakText(out);
+    speakNow(out);
   } catch(e){
     addMsg('ai','Chyba: ' + e.message);
-    window.__plain = 'Něco se nepovedlo, zkus to znovu.';
-    speakText('Něco se nepovedlo, zkus to znovu.');
+    speakNow('Něco se nepovedlo, zkus to znovu.');
   }
 }
 
@@ -253,7 +224,6 @@ function startRec(){
 
 function toggleMic(){
   if (!SR) { addMsg('ai','Tvůj prohlížeč nepodporuje rozpoznávání řeči. Otevř v Safari (iPhone) nebo Chrome.'); return; }
-  unlockAudio();
   if (listening) { listening = false; try { rec.stop(); } catch(_){} micBtn.classList.remove('listening'); setStatus('Vypnuto'); return; }
   listening = true;
   micBtn.classList.add('listening');
