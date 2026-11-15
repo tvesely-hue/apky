@@ -104,6 +104,9 @@ function playParts(parts, i, myId){
   const p = new Audio(ttsUrl(parts[i]));
   p.referrerPolicy = 'no-referrer';   // GOOGLE BLOKUJE podle Refereru (GitHub Pages) → vrací 404
   p.volume = 1;
+  // iOS: audio element MUSÍ být v DOM, jinak ho Safari po 350 ms zlikviduje a nikdy nehrá
+  p.style.display = 'none';
+  document.body.appendChild(p);
   activePlayers.push(p);
   // iOS bug: onended se nezavolá vždy — fallback: po duration + 2 s pokračujeme vždy
   let ended = false;
@@ -113,6 +116,7 @@ function playParts(parts, i, myId){
     if (timer) clearTimeout(timer);
     if (myId !== speakId) return;   // stará odpověď — zrušeno
     try { p.pause(); } catch(_){}
+    try { p.remove(); } catch(_){}   // vyhodím z DOM — ať se nenařadí stovky elementů
     playParts(parts, i + 1, myId);
   };
   p.onended = finish;
