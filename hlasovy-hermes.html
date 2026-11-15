@@ -84,17 +84,23 @@ function addMsg(cls, text){
 }
 function setStatus(t){ statusEl.textContent = t; }
 
-/* ====== HLAS: audio element + Google TTS (verze 8, co ti fungovala) + speechSynthesis jako záloha ====== */
-/* Rozdělíme text na věty/kusy ≤190 znaků (Google TTS limit) — čteme po kusech, poslech se obnoví sám po posledním. */
-const player = new Audio();
-let speakQueue = [];
-
-function ttsUrl(text){
-  return 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent(text.slice(0,190));
-}
-
-/* primární cesta: speechSynthesis (iOS nativní hlas Zuzana) — cancel+delay+pause/resume */
+/* ====== HLAS: speechSynthesis + iOS fixy ====== */
+/* iOS bug: synthesis se přeruší po prvním slově, když audio session není aktivní.
+   Fixy: 1) tichý zvuk při gestu (odemkne audio session) 2) pause/resume timer 3) malá pauza po cancel. */
 let currentUtterance = null;
+let speakQueue = [];
+let keepAlive = null;
+
+/* tichý 0,5 s zvuk — spustí se při gestu, odemkne audio session pro iOS */
+const silentAudio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
+
+function unlockAudioSession(){
+  try {
+    silentAudio.volume = 0;
+    silentAudio.loop = true;
+    silentAudio.play();
+  } catch(_){}
+}
 
 function speakNow(text){
   try { rec && rec.stop(); } catch(_){}
@@ -103,32 +109,44 @@ function speakNow(text){
   const parts = [];
   let cur = '';
   for (const s of sents){
-    if ((cur + s).length > 300) { if (cur) parts.push(cur); cur = s; }
+    if ((cur + s).length > 250) { if (cur) parts.push(cur); cur = s; }
     else cur += s;
   }
   if (cur) parts.push(cur);
-  speakQueue = parts;          // globální reference — GC nezasáhne
+  speakQueue = parts;
   speechSynthesis.cancel();
-  // malá pauza — iOS potřebuje po cancel() čas, jinak zlikviduje i novou utterance
   setTimeout(() => speakChunk(0), 150);
 }
 
 function speakChunk(i){
-  if (i >= speakQueue.length) { restartListening(); return; }
+  if (i >= speakQueue.length) { stopKeepAlive(); restartListening(); return; }
   currentUtterance = new SpeechSynthesisUtterance(speakQueue[i]);
   currentUtterance.lang = 'cs-CZ';
   currentUtterance.rate = 1.0;
   const cz = speechSynthesis.getVoices().find(v => v.lang.toLowerCase().startsWith('cs'));
   if (cz) currentUtterance.voice = cz;
   currentUtterance.onend = () => { setTimeout(() => speakChunk(i + 1), 100); };
-  currentUtterance.onerror = () => { restartListening(); };
+  currentUtterance.onerror = () => { stopKeepAlive(); restartListening(); };
   speechSynthesis.speak(currentUtterance);
-  // iOS workaround proti utnutí: pause + resume
-  setTimeout(() => { if (speechSynthesis.paused) speechSynthesis.resume(); }, 200);
+  startKeepAlive();
+}
+
+/* iOS workaround: každých 10 s pauza + resume — nutí iOS nepřerušit mluvení */
+function startKeepAlive(){
+  stopKeepAlive();
+  keepAlive = setInterval(() => {
+    speechSynthesis.pause();
+    speechSynthesis.resume();
+  }, 10000);
+}
+function stopKeepAlive(){
+  if (keepAlive) { clearInterval(keepAlive); keepAlive = null; }
 }
 
 function testSound(){
-  const u = new SpeechSynthesisUtterance('Test zvuku. Slyšíš mě?');
+  unlockAudioSession();
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance('Test zvuku. Slyšíš mě po celou větu?');
   u.lang = 'cs-CZ';
   const cz = speechSynthesis.getVoices().find(v => v.lang.toLowerCase().startsWith('cs'));
   if (cz) u.voice = cz;
@@ -247,6 +265,7 @@ function toggleMic(){
   if (listening) { listening = false; try { rec.stop(); } catch(_){} micBtn.classList.remove('listening'); setStatus('Vypnuto'); return; }
   listening = true;
   micBtn.classList.add('listening');
+  unlockAudioSession();   // odemkne audio session pro iOS (tichý zvuk)
   startRec();
 }
 </script>
