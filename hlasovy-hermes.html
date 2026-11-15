@@ -104,25 +104,9 @@ function speakNow(text){
     else cur += s;
   }
   if (cur) parts.push(cur);
-  // Pokus 1: stáhne všechny zvuky dopředu jako bloby (nejspolehlivější na iOS)
-  Promise.all(parts.map(p => fetch(ttsUrl(p)).then(r => r.blob()))).then(blobs => {
-    speakQueue = blobs.map(b => URL.createObjectURL(b));
-    playChunk(0);
-  }).catch(() => {
-    // Pokus 2: pokud blob nestačí, přehraje přímo z URL (stará verze 8)
-    speakQueue = parts;
-    playChunkDirect(0);
-  });
-}
-
-function playChunkDirect(i){
-  if (i >= speakQueue.length) { restartListening(); return; }
-  player.src = ttsUrl(speakQueue[i]);
-  player.onended = () => { playChunkDirect(i + 1); };
-  player.onerror = () => { setStatus('🔊 Nepovedlo se přehrát'); restartListening(); };
-  player.volume = 1;
-  const pp = player.play();
-  if (pp) pp.catch(() => { setStatus('🔊 Nepovedlo se přehrát'); restartListening(); });
+  // Verze 8: PRVNÍ kus se přehraje SYNCHRONNĚ tady (v gestu klepnutí) — iOS pak řetěz dovolí
+  speakQueue = parts;
+  playChunk(0);
 }
 
 function playChunk(i){
@@ -136,15 +120,10 @@ function playChunk(i){
 }
 
 function testSound(){
-  // Stáhne zvuk dopředu (blob) a pak přehraje — stejný mechanismus jako odpovědi
-  fetch(ttsUrl('Test zvuku. Slyšíš mě po celou větu?'))
-    .then(r => r.blob())
-    .then(b => {
-      const p = new Audio(URL.createObjectURL(b));
-      p.volume = 1;
-      p.play().then(()=>{ setStatus('Zvuk hraje ✅'); }).catch(e=>{ setStatus('Nepovedlo se přehrát: ' + (e.message||'')); });
-    })
-    .catch(e=>{ setStatus('Nepovedlo se stáhnout zvuk'); });
+  // Přímo audio element — synchronně v gestu (blob fetch na iOS blokuje CORS)
+  const p = new Audio(ttsUrl('Test zvuku. Slyšíš mě po celou větu?'));
+  p.volume = 1;
+  p.play().then(()=>{ setStatus('Zvuk hraje ✅'); }).catch(e=>{ setStatus('Nepovedlo se přehrát: ' + (e.message||'')); });
 }
 
 /* po přehrání odpovědi se poslech sám obnoví — nemusíš vypínat/zapínat mikrofon */
