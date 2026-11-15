@@ -84,7 +84,8 @@ function addMsg(cls, text){
 }
 function setStatus(t){ statusEl.textContent = t; }
 
-/* ====== HLAS: verze 8, co ti fungovala — audio element + Google TTS, čtení po kusech ====== */
+/* ====== HLAS: audio element + Google TTS, zvuky se stáhnou DOPŘEDU (při gestu)
+   a pak přehrají z lokální paměti — na iOS je to jediný spolehlivý mechanismus ====== */
 const player = new Audio();
 let speakQueue = [];
 
@@ -103,13 +104,30 @@ function speakNow(text){
     else cur += s;
   }
   if (cur) parts.push(cur);
-  speakQueue = parts;          // globální reference
-  playChunk(0);
+  // Pokus 1: stáhne všechny zvuky dopředu jako bloby (nejspolehlivější na iOS)
+  Promise.all(parts.map(p => fetch(ttsUrl(p)).then(r => r.blob()))).then(blobs => {
+    speakQueue = blobs.map(b => URL.createObjectURL(b));
+    playChunk(0);
+  }).catch(() => {
+    // Pokus 2: pokud blob nestačí, přehraje přímo z URL (stará verze 8)
+    speakQueue = parts;
+    playChunkDirect(0);
+  });
+}
+
+function playChunkDirect(i){
+  if (i >= speakQueue.length) { restartListening(); return; }
+  player.src = ttsUrl(speakQueue[i]);
+  player.onended = () => { playChunkDirect(i + 1); };
+  player.onerror = () => { setStatus('🔊 Nepovedlo se přehrát'); restartListening(); };
+  player.volume = 1;
+  const pp = player.play();
+  if (pp) pp.catch(() => { setStatus('🔊 Nepovedlo se přehrát'); restartListening(); });
 }
 
 function playChunk(i){
   if (i >= speakQueue.length) { restartListening(); return; }
-  player.src = ttsUrl(speakQueue[i]);
+  player.src = speakQueue[i];
   player.onended = () => { playChunk(i + 1); };
   player.onerror = () => { setStatus('🔊 Nepovedlo se přehrát'); restartListening(); };
   player.volume = 1;
@@ -118,9 +136,15 @@ function playChunk(i){
 }
 
 function testSound(){
-  const p = new Audio(ttsUrl('Test zvuku. Slyšíš mě po celou větu?'));
-  p.volume = 1;
-  p.play().then(()=>{ setStatus('Zvuk hraje ✅'); }).catch(e=>{ setStatus('Nepovedlo se přehrát: ' + (e.message||'')); });
+  // Stáhne zvuk dopředu (blob) a pak přehraje — stejný mechanismus jako odpovědi
+  fetch(ttsUrl('Test zvuku. Slyšíš mě po celou větu?'))
+    .then(r => r.blob())
+    .then(b => {
+      const p = new Audio(URL.createObjectURL(b));
+      p.volume = 1;
+      p.play().then(()=>{ setStatus('Zvuk hraje ✅'); }).catch(e=>{ setStatus('Nepovedlo se přehrát: ' + (e.message||'')); });
+    })
+    .catch(e=>{ setStatus('Nepovedlo se stáhnout zvuk'); });
 }
 
 /* po přehrání odpovědi se poslech sám obnoví — nemusíš vypínat/zapínat mikrofon */
