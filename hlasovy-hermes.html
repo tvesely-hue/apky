@@ -116,6 +116,14 @@ async function playChain(urls, onFail){
 function fallbackTts(text){
   try { speechSynthesis.speak(new SpeechSynthesisUtterance(text)); } catch(e){}
 }
+/* po přehrání odpovědi se poslech sám obnoví — nemusíš vypínat/zapínat mikrofon */
+function restartListening(){
+  if (!listening) return;
+  try { rec.stop(); } catch(_){}
+  setTimeout(() => {
+    if (listening) { try { rec.start(); } catch(_){} }
+  }, 500);
+}
 
 function speakText(text){
   unlockAudio();
@@ -127,15 +135,53 @@ function speakText(text){
   playChain(parts.map(p => 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent(p)), () => {
      fallbackTts(window.__plain || '');
      statusEl.textContent = listening ? 'Mluv…' : 'Hotovo';
-  });
+     restartListening();
+  }).then(() => { restartListening(); });
 }
 window.__plain = '';
 
 /* ====== ZPRÁVY / API ====== */
+/* zjištění polohy (GPS) — pro počasí */
+function getPos(){
+  return new Promise((res) => {
+    if (!navigator.geolocation) return res(null);
+    navigator.geolocation.getCurrentPosition(
+      (p) => res({ lat: p.coords.latitude, lon: p.coords.longitude }),
+      () => res(null),
+      { timeout: 8000 }
+    );
+  });
+}
+
+/* počasí z Open-Meteo (zdarma, bez klíče) */
+async function weatherData(){
+  const pos = await getPos();
+  if (!pos) return null;
+  const u = 'https://api.open-meteo.com/v1/forecast?latitude=' + pos.lat + '&longitude=' + pos.lon +
+    '&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto';
+  const r = await fetch(u);
+  const j = await r.json();
+  return j;
+}
+
 async function ask(text){
   if (!key) { addMsg('ai','Nejdřív vlož OpenRouter key (⚙️ vpravo nahoře).'); speakText('Nejdřív vlož klíč OpenRouter. Nahoře je ozubené kolo.'); return; }
   addMsg('me', text);
   setStatus('🤔 Přemýšlím…');
+  const t = text.toLowerCase();
+  let extra = '';
+  try {
+    if (/počas|pocasi|jak.*venku|prš|déšť|dest|teplota|ochlad|venku/.test(t)) {
+      const w = await weatherData();
+      if (w) {
+        extra = 'Aktuální počasí podle GPS uživatele: ' +
+          'teplota ' + Math.round(w.current.temperature_2m) + ' °C, pocitově ' + Math.round(w.current.apparent_temperature) +
+          ' °C, srážky ' + (w.current.precipitation||0) + ' mm, vítr ' + Math.round(w.current.wind_speed_10m) + ' km/h. ' +
+          'Dnes max ' + Math.round(w.daily.temperature_2m_max[0]) + ' °C, min ' + Math.round(w.daily.temperature_2m_min[0]) +
+          ' °C, srážky ' + (w.daily.precipitation_sum[0]||0) + ' mm. ';
+      }
+    }
+  } catch(e){}
   try {
     const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -144,6 +190,7 @@ async function ask(text){
         model: 'z-ai/glm-5.3-flash',
         messages: [
           { role:'system', content:'Jsi přátelský hlasový asistent jménem Hermes. Odpovídej česky, stručně (max 3–4 krátké věty), přirozeně — odpověď se bude číst nahlas při řízení auta. Nepoužívej markdown ani seznamy.' },
+          { role:'system', content: extra },
           { role:'user', content: text }
         ]
       })
