@@ -100,20 +100,34 @@ function testSound(){
   } catch(e){}
 }
 
-/* stáhni zvuk dopředu a přehraj jako blob — na iPhonu spolehlivější než přímý odkaz */
+/* Web Audio API — odemkne se gestem (unlockAudio), pak hraje bez dalších omezení */
+let audioCtx = null;
+function unlockAudio(){
+  if (audioCtx) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    g.gain.value = 0.001;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.05);
+    audioCtx.resume();
+    setStatus('Hlas odemčen ✅');
+  } catch(e){ setStatus('Hlas nelze odemknout: ' + e.message); }
+}
+
 async function playChain(urls, onFail){
   try {
     for (const u of urls){
       const r = await fetch(u);
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      const blob = await r.blob();
-      player.src = URL.createObjectURL(blob);
-      player.volume = 1;
-      await new Promise((res,rej)=>{
-        player.onended = res;
-        player.onerror = () => rej(new Error('playback'));
-        const pp = player.play(); if (pp) pp.catch(rej);
-      });
+      const buf = await r.arrayBuffer();
+      const decoded = await audioCtx.decodeAudioData(buf);
+      const src = audioCtx.createBufferSource();
+      src.buffer = decoded;
+      src.connect(audioCtx.destination);
+      src.start();
+      await new Promise((res) => { src.onended = res; });
     }
   } catch(e){ onFail(); return false; }
 }
