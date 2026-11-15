@@ -48,6 +48,12 @@
 let listening = false, rec = null;
 let key = localStorage.getItem('gkey') || '';
 const statusEl = document.getElementById('status');
+
+/* iOS: hlasy se načítají asynchronně — načteme je hned při startu */
+if (typeof speechSynthesis !== 'undefined') {
+  speechSynthesis.getVoices();
+  speechSynthesis.onvoiceschanged = () => { speechSynthesis.getVoices(); };
+}
 const chatEl = document.getElementById('chat');
 const micBtn = document.getElementById('micBtn');
 
@@ -78,36 +84,24 @@ function addMsg(cls, text){
 }
 function setStatus(t){ statusEl.textContent = t; }
 
-/* ====== HLAS: audio element + Google TTS (rozdělíme na kusy do ~190 znaků) ====== */
-const player = new Audio();
-player.onended = () => { restartListening(); };
-player.onerror = (e) => { setStatus('🔊 Chyba přehrávání: ' + (e && e.message ? e.message : 'nelze')); };
-
-function ttsUrl(text){ return 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent(text.slice(0,190)); }
-
+/* ====== HLAS: speechSynthesis (iOS nativní hlas — žádná síť, žádný CORS, žádný klíč) ====== */
 function speakNow(text){
   try { rec && rec.stop(); } catch(_){}
   setStatus('🔴 Odpovídám…');
-  // rozdělíme na kusy do ~190 znaků
-  const parts = [];
-  for (let i=0;i<text.length && parts.length<5;i+=185){
-    parts.push(text.slice(i, Math.min(i+185, text.length)));
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'cs-CZ';
+    u.rate = 1.0;
+    const cz = speechSynthesis.getVoices().find(v => v.lang.toLowerCase().startsWith('cs'));
+    if (cz) u.voice = cz;
+    u.onend = () => { restartListening(); };
+    u.onerror = (e) => { setStatus('🔊 Hlas: ' + (e.error || '?')); restartListening(); };
+    speechSynthesis.speak(u);
+  } catch(e){
+    setStatus('🔊 Hlas nelze: ' + (e.message || '?'));
+    restartListening();
   }
-  let idx = 0;
-  player.volume = 1;
-  player.onended = () => {
-    idx++;
-    if (idx < parts.length){
-      player.src = ttsUrl(parts[idx]);
-      player.play().catch(()=>{});
-    } else {
-      player.onended = () => { restartListening(); };
-      restartListening();
-    }
-  };
-  player.onerror = () => { restartListening(); };
-  player.src = ttsUrl(parts[0]);
-  player.play().catch(e => { setStatus('🔊 Nepovedlo se přehrát: ' + (e.message || '?')); });
 }
 
 function testSound(){
