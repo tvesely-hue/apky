@@ -342,13 +342,16 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
    takže vždy vytvoříme úplně novou */
 let speaking = false;   // hraje odpověď — mikrofon se nikdy nespustí (jinak iOS přeruší zvuk a appka "vypadává")
 
+let recActive = false;   // instance SKUTEČNĚ naběhla (onstart) — jinak onend smyčka spouští startRec dokola
+
 function startRec(){
   if (speaking) return;   // BĚHEM MLUVENÍ NIKDY NESPUSTÍMIKROFON — iOS přeruší zvuk
+  if (recActive) return;  // instance už běží — nezačínat znovu (jinak smyčka startRec)
   rec = new SR();
   rec.lang = 'cs-CZ';
   rec.continuous = true;
   rec.interimResults = false;
-  rec.onstart = () => { setStatus('Mluv…'); recWatchdog = 0; };
+  rec.onstart = () => { recActive = true; setStatus('Mluv…'); recWatchdog = 0; };
   /* iOS: reset watchdogu i při každém zvuku — ať dlouhá souvislá věta neumře po 15 s */
   rec.onsoundstart = () => { recWatchdog = 0; };
   rec.onspeechstart = () => { recWatchdog = 0; };
@@ -361,10 +364,14 @@ function startRec(){
   rec.onerror = (e) => {
     recWatchdog = 0;
     if (e.error==='not-allowed') addMsg('ai','Musíš povolit mikrofon (Nastavení Safari → Mikrofon).');
+    else if (e.error && e.error !== 'aborted' && e.error !== 'no-speech') setStatus('Mic: ' + e.error);
   };
-  /* iOS: stejnou instanci po stop() znovu nespustí — VŽDY NOVÁ instance (nová funkce) */
+  /* iOS: stejnou instanci po stop() znovu nespustí — VŽDY NOVÁ instance.
+     Ale restart jen když instance SKUTEČNĚ naběhla (onstart) — jinak smyčka startRec dokola */
   rec.onend = () => {
-    if (listening && !speaking) { setTimeout(() => { if (listening && !speaking) startRec(); }, 300); }
+    const hadStarted = recActive;
+    recActive = false;
+    if (hadStarted && listening && !speaking) { setTimeout(() => { if (listening && !speaking) startRec(); }, 700); }
   };
   try { rec.start(); } catch(_){
     setTimeout(() => { if (listening && !speaking) startRec(); }, 1500);
