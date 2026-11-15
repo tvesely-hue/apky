@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Hlasový Hermes — TEST</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; font-family:-apple-system,system-ui,sans-serif; }
+  body { background:#0e1117; color:#e8e8ea; padding:16px; height:100dvh; }
+  h1 { font-size:18px; margin-bottom:16px; }
+  button { display:block; width:100%; margin:8px 0; padding:14px; border-radius:10px; border:none; background:#2b6cb0; color:#fff; font-size:16px; font-weight:600; }
+  button.warn { background:#e53e3e; }
+  button.gold { background:#b8860b; }
+  #status { padding:12px; background:#161a22; border-radius:10px; margin:14px 0; font-size:14px; min-height:44px; }
+  .msg { padding:10px; background:#232a35; border-radius:10px; margin:8px 0; font-size:15px; }
+</style>
+</head>
+<body>
+<h1>🧪 Hlasový Hermes — TEST</h1>
+<div id="status">Krok 1: klepni na Pípnutí</div>
+<button class="gold" onclick="pip()">1️⃣ Pípnutí (test zvuku)</button>
+<button onclick="pipLong()">2️⃣ Hlasový veta (test zvuku)</button>
+<button onclick="testMic()">3️⃣ Test mikrofonu</button>
+<button onclick="testApi()">4️⃣ Test klíče + GLM</button>
+<div id="chat"></div>
+<script>
+const statusEl = document.getElementById('status');
+const chatEl = document.getElementById('chat');
+let key = localStorage.getItem('gkey') || '';
+// klíč z URL
+try {
+  const u = new URL(location.href);
+  const k = u.searchParams.get('key');
+  if (k) { localStorage.setItem('gkey', k); key = k; }
+} catch(e){}
+if (key) statusEl.textContent = 'Klíč: uložen ✅ (začíná ' + key.slice(0,12) + '...)';
+
+function say(t){ const d = document.createElement('div'); d.className='msg'; d.textContent = t; chatEl.appendChild(d); }
+
+function pip(){
+  const beep = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');
+  beep.play().then(()=>{ statusEl.textContent = 'Pípnutí hraje ✅'; say('Pípnutí ✅'); }).catch(e=>{ statusEl.textContent = 'Pípnutí NEHRAJE: ' + e.message; say('Pípnutí ❌ ' + e.message); });
+}
+
+async function pipLong(){
+  const r = await fetch('https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent('Hlasový Hermes test zvuku'));
+  if (!r.ok) { statusEl.textContent = 'TTS server: ' + r.status; say('TTS server: HTTP ' + r.status); return; }
+  const blob = await r.blob();
+  const a = new Audio(URL.createObjectURL(blob));
+  a.play().then(()=>{ statusEl.textContent = 'Hlas hraje ✅'; say('Hlas ✅'); }).catch(e=>{ statusEl.textContent = 'Hlas NEHRAJE: ' + e.message; say('Hlas ❌ ' + e.message); });
+}
+
+function testMic(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { statusEl.textContent = 'Rozpoznávání v tomto prohlížeči není'; say('Rozpoznávání ❌'); return; }
+  const r = new SR();
+  r.lang = 'cs-CZ';
+  r.onresult = (e) => { statusEl.textContent = 'Slyším: ' + e.results[0][0].transcript; say('Slyším: ' + e.results[0][0].transcript); };
+  r.onerror = (e) => { statusEl.textContent = 'Mikrofon chyba: ' + e.error; say('Mikrofon ❌ ' + e.error); };
+  r.onend = () => { statusEl.textContent += ' — konec testu'; };
+  r.start();
+  statusEl.textContent = 'Mluv…';
+  say('Mluv…');
+}
+
+async function testApi(){
+  if (!key) { statusEl.textContent = 'Klíč NENÍ uložený'; say('Klíč ❌'); return; }
+  statusEl.textContent = 'Volám GLM…';
+  try {
+    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Authorization':'Bearer ' + key},
+      body: JSON.stringify({ model:'z-ai/glm-5.3-flash', messages:[{role:'user',content:'Řekni jedno slovo: funguje'}] })
+    });
+    const j = await r.json();
+    const out = j.choices?.[0]?.message?.content;
+    if (out) { statusEl.textContent = 'GLM odpověděl: ' + out; say('GLM ✅ ' + out); }
+    else { statusEl.textContent = 'GLM chyba: ' + JSON.stringify(j).slice(0,120); say('GLM ❌ ' + JSON.stringify(j).slice(0,120)); }
+  } catch(e){ statusEl.textContent = 'GLM chyba: ' + e.message; say('GLM ❌ ' + e.message); }
+}
+</script>
+</body>
+</html>
