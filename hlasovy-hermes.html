@@ -119,21 +119,23 @@ function fallbackTts(text){
 /* po přehrání odpovědi se poslech sám obnoví — nemusíš vypínat/zapínat mikrofon */
 function restartListening(){
   if (!listening) return;
-  try { rec.stop(); } catch(_){}
+  setStatus('Mluv…');
+  try { rec && rec.stop(); } catch(_){}
   setTimeout(() => {
-    if (listening) { try { rec.start(); } catch(_){} }
-  }, 500);
+    if (listening) { try { rec.start(); } catch(_){ setTimeout(() => { if (listening) startRec(); }, 300); } }
+  }, 900);
 }
 
 function speakText(text){
   unlockAudio();
+  // během přehrávání poslech vypni — Safari dva zvuky/mikrofon zároveň neumí
+  try { rec && rec.stop(); } catch(_){}
   setStatus('🔴 Odpovídám…');
   let parts = [];
   for (let i=0;i<text.length && parts.length<5;i+=185){
     parts.push(text.slice(i, Math.min(i+185, text.length)));
   }
   playChain(parts.map(p => 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent(p)), () => {
-     fallbackTts(window.__plain || '');
      statusEl.textContent = listening ? 'Mluv…' : 'Hotovo';
      restartListening();
   }).then(() => { restartListening(); });
@@ -164,6 +166,9 @@ async function weatherData(){
   return j;
 }
 
+/* paměť konverzace — appka si pamatuje, co jsme si řekli */
+let history = [];
+
 async function ask(text){
   if (!key) { addMsg('ai','Nejdřív vlož OpenRouter key (⚙️ vpravo nahoře).'); speakText('Nejdřív vlož klíč OpenRouter. Nahoře je ozubené kolo.'); return; }
   addMsg('me', text);
@@ -191,6 +196,7 @@ async function ask(text){
         messages: [
           { role:'system', content:'Jsi přátelský hlasový asistent jménem Hermes. Odpovídej česky, stručně (max 3–4 krátké věty), přirozeně — odpověď se bude číst nahlas při řízení auta. Nepoužívej markdown ani seznamy.' },
           { role:'system', content: extra },
+          ...history,
           { role:'user', content: text }
         ]
       })
@@ -198,6 +204,9 @@ async function ask(text){
     const j = await r.json();
     const out = (j.choices?.[0]?.message?.content || '').replace(/\*\*/g,'').replace(/[*_#>\-]{1,2}/g,'');
     if (!out) throw new Error(JSON.stringify(j).slice(0,120));
+    history.push({ role:'user', content: text });
+    history.push({ role:'assistant', content: out });
+    if (history.length > 12) history = history.slice(-12);
     addMsg('ai', out);
     window.__plain = out;
     speakText(out);
