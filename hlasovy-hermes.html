@@ -138,7 +138,9 @@ function speakText(text){
   playChain(parts.map(p => 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent(p)), () => {
      statusEl.textContent = listening ? 'Mluv…' : 'Hotovo';
      restartListening();
-  }).then(() => { restartListening(); });
+  }).then(() => { restartListening(); }).catch(() => {
+     statusEl.textContent = '🔊 Klepni na tlačítko Přečíst u odpovědi';
+  });
 }
 window.__plain = '';
 
