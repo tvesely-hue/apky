@@ -93,6 +93,9 @@ function ttsUrl(text){
   return 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent(text.slice(0,190));
 }
 
+/* primární cesta: speechSynthesis (iOS nativní hlas Zuzana) — cancel+delay+pause/resume */
+let currentUtterance = null;
+
 function speakNow(text){
   try { rec && rec.stop(); } catch(_){}
   setStatus('🔴 Odpovídám…');
@@ -100,42 +103,38 @@ function speakNow(text){
   const parts = [];
   let cur = '';
   for (const s of sents){
-    if ((cur + s).length > 185) { if (cur) parts.push(cur); cur = s; }
+    if ((cur + s).length > 300) { if (cur) parts.push(cur); cur = s; }
     else cur += s;
   }
   if (cur) parts.push(cur);
   speakQueue = parts;          // globální reference — GC nezasáhne
-  playChunk(0);
+  speechSynthesis.cancel();
+  // malá pauza — iOS potřebuje po cancel() čas, jinak zlikviduje i novou utterance
+  setTimeout(() => speakChunk(0), 150);
 }
 
-function playChunk(i){
+function speakChunk(i){
   if (i >= speakQueue.length) { restartListening(); return; }
-  player.src = ttsUrl(speakQueue[i]);
-  player.onended = () => { playChunk(i + 1); };
-  player.onerror = () => { speechFallback(speakQueue.join(' ')); };
-  player.volume = 1;
-  const pp = player.play();
-  if (pp) pp.catch(() => { speechFallback(speakQueue.join(' ')); });
-}
-
-/* záloha: iOS nativní hlas (Zuzana) — jen když audio element neprojde */
-function speechFallback(text){
-  try {
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text.slice(0, 300));
-    u.lang = 'cs-CZ';
-    const cz = speechSynthesis.getVoices().find(v => v.lang.toLowerCase().startsWith('cs'));
-    if (cz) u.voice = cz;
-    u.onend = () => { restartListening(); };
-    u.onerror = () => { restartListening(); };
-    speechSynthesis.speak(u);
-  } catch(e){ restartListening(); }
+  currentUtterance = new SpeechSynthesisUtterance(speakQueue[i]);
+  currentUtterance.lang = 'cs-CZ';
+  currentUtterance.rate = 1.0;
+  const cz = speechSynthesis.getVoices().find(v => v.lang.toLowerCase().startsWith('cs'));
+  if (cz) currentUtterance.voice = cz;
+  currentUtterance.onend = () => { setTimeout(() => speakChunk(i + 1), 100); };
+  currentUtterance.onerror = () => { restartListening(); };
+  speechSynthesis.speak(currentUtterance);
+  // iOS workaround proti utnutí: pause + resume
+  setTimeout(() => { if (speechSynthesis.paused) speechSynthesis.resume(); }, 200);
 }
 
 function testSound(){
-  const p = new Audio(ttsUrl('Test zvuku. Slyšíš mě?'));
-  p.volume = 1;
-  p.play().then(()=>{ setStatus('Zvuk hraje ✅'); }).catch(e=>{ setStatus('Nepovedlo se přehrát: ' + (e.message||'')); });
+  const u = new SpeechSynthesisUtterance('Test zvuku. Slyšíš mě?');
+  u.lang = 'cs-CZ';
+  const cz = speechSynthesis.getVoices().find(v => v.lang.toLowerCase().startsWith('cs'));
+  if (cz) u.voice = cz;
+  u.onend = () => { setStatus('Zvuk hraje ✅'); };
+  u.onerror = (e) => { setStatus('Hlas selhal: ' + (e.error || '?')); };
+  speechSynthesis.speak(u);
 }
 
 /* po přehrání odpovědi se poslech sám obnoví — nemusíš vypínat/zapínat mikrofon */
