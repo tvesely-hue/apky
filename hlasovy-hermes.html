@@ -68,13 +68,16 @@ function addMsg(cls, text){
 function setStatus(t){ statusEl.textContent = t; }
 
 function speak(text){
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'cs-CZ';
-  u.rate = 1.05;
-  u.onend = () => { if (listening) setStatus('Mluv…'); else setStatus('Hotovo'); };
-  speechSynthesis.cancel();
-  speechSynthesis.speak(u);
-  setStatus('🔴 Odpovídám…');
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'cs-CZ';
+    u.rate = 1.05;
+    u.onend = () => { if (listening) setStatus('Mluv…'); else setStatus('Hotovo'); };
+    u.onerror = (e) => { setStatus('Chyba hlasu: ' + (e.error || '?')); };
+    window.__u = u; // drž referenci, ať iOS nevyhodí
+    speechSynthesis.speak(u);
+    setStatus('🔴 Odpovídám…');
+  } catch(e){ setStatus('Chyba hlasu: ' + e.message); }
 }
 
 async function ask(text){
@@ -123,6 +126,8 @@ function toggleMic(){
   rec.onerror = (e) => { if (e.error==='not-allowed') { addMsg('ai','Musíš povolit mikrofon (Nastavení Safari → Mikrofon).'); setStatus('Chyba'); } };
   rec.onend = () => { if (listening) { try { rec.start(); } catch(_){} } };
   rec.start();
+  // iOS/Safari: odemknutí hlasového enginu gestem — prázdná výpověď hned z klepnutí
+  try { const prime = new SpeechSynthesisUtterance(' '); prime.volume = 0; speechSynthesis.speak(prime); } catch(e){}
 }
 </script>
 </body>
