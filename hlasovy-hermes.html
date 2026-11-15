@@ -93,19 +93,33 @@ function ttsUrl(text){
   return 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent(text.slice(0,190));
 }
 
-function playParts(parts, i){
+let activePlayers = [];   // všechny přehrávače — nový kus zastaví všechny předchozí (jinak hrají 2 hlasy současně)
+let speakId = 0;          // číslo generace — nová odpověď zruší starý queue (jinak starý timer spustí starý kus)
+
+function playParts(parts, i, myId){
   if (i >= parts.length) { restartListening(); return; }
+  // ZASTAVÍM všechny předchozí přehrávače — a jejich Timery (jinak hrají 2 hlasy současně)
+  activePlayers.forEach(a => { try { a.pause(); } catch(_){} });
+  activePlayers = [];
   const p = new Audio(ttsUrl(parts[i]));
   p.referrerPolicy = 'no-referrer';   // GOOGLE BLOKUJE podle Refereru (GitHub Pages) → vrací 404
   p.volume = 1;
+  activePlayers.push(p);
   // iOS bug: onended se nezavolá vždy — fallback: po duration + 2 s pokračujeme vždy
   let ended = false;
-  const finish = () => { if (ended) return; ended = true; playParts(parts, i + 1); };
+  let timer = null;
+  const finish = () => {
+    if (ended) return; ended = true;
+    if (timer) clearTimeout(timer);
+    if (myId !== speakId) return;   // stará odpověď — zrušeno
+    try { p.pause(); } catch(_){}
+    playParts(parts, i + 1, myId);
+  };
   p.onended = finish;
   p.onerror = () => { setStatus('🔊 Nepovedlo se přehrát'); finish(); };
   p.addEventListener('loadedmetadata', () => {
     const t = (p.duration || 5) + 2;
-    setTimeout(finish, t * 1000);
+    timer = setTimeout(finish, t * 1000);
   });
   const pp = p.play();
   if (pp) pp.catch(e => {
@@ -117,6 +131,11 @@ function playParts(parts, i){
 }
 
 function speakNow(text){
+  // Zastavím všechny přehrávače — nová odpověď zastaví předchozí (jinak hrají 2 hlasy současně)
+  activePlayers.forEach(a => { try { a.pause(); } catch(_){} });
+  activePlayers = [];
+  speakId++;   // nová generace — starý timer nebude pokračovat
+  const myId = speakId;
   try { rec && rec.stop(); } catch(_){}
   setStatus('🔴 Odpovídám…');
   const sents = text.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) || [text];
@@ -128,10 +147,13 @@ function speakNow(text){
   }
   if (cur) parts.push(cur);
   // 350 ms po rec.stop() — iOS potřebuje uvolnit audio session od mikrofonu
-  setTimeout(() => playParts(parts, 0), 350);
+  setTimeout(() => { if (myId === speakId) playParts(parts, 0, myId); }, 350);
 }
 
 function testSound(){
+  // Zastavím všechny přehrávače — a pak přehraju test (jinak hrají 2 hlasy současně)
+  activePlayers.forEach(a => { try { a.pause(); } catch(_){} });
+  activePlayers = [];
   // Přímo audio element — synchronně v gestu + bez Refereru (Google blokuje podle něj)
   const p = new Audio(ttsUrl('Test zvuku. Slyšíš mě po celou větu?'));
   p.referrerPolicy = 'no-referrer';
