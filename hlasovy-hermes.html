@@ -161,36 +161,39 @@ async function weatherData(){
   return j;
 }
 
-/* dopravní info — RSS z dopravniinfo.cz (zdarma, bez klíče) */
+/* Doplněk — RSS zprávy/dopravní info přes r.jina.ai (zdarma, bez klíče, CORS povolený) */
+async function fetchViaJina(url){
+  const r = await fetch('https://r.jina.ai/' + url);
+  const txt = await r.text();
+  return txt;
+}
+
+/* dopravní info — RSS z auto.idnes.cz (zdarma, bez klíče) */
 async function trafficData(){
   try {
-    const r = await fetch('https://www.dopravniinfo.cz/rss');
-    const xml = await r.text();
-    const doc = new DOMParser().parseFromString(xml, 'text/xml');
-    const items = doc.querySelectorAll('item');
+    const txt = await fetchViaJina('https://auto.idnes.cz/rss');
+    // Podívám se na články — hledám dopravní/silniční
+    const lines = txt.split('\n').filter(l => l.startsWith('### ['));
     const out = [];
-    for (let i = 0; i < Math.min(items.length, 8); i++) {
-      const t = items[i].querySelector('title');
-      const d = items[i].querySelector('description');
-      out.push((t ? t.textContent : '') + (d ? ' — ' + d.textContent : ''));
+    for (const l of lines.slice(0, 10)) {
+      const m = l.match(/\[([^\]]+)\]/);
+      if (m) out.push(m[1]);
     }
-    return out.join(' ||| ');
+    return out.length ? out.join(' ||| ') : null;
   } catch(e){ return null; }
 }
 
 /* zprávy — RSS z novinky.cz (zdarma, bez klíče) */
 async function newsData(){
   try {
-    const r = await fetch('https://www.novinky.cz/rss');
-    const xml = await r.text();
-    const doc = new DOMParser().parseFromString(xml, 'text/xml');
-    const items = doc.querySelectorAll('item');
+    const txt = await fetchViaJina('https://www.novinky.cz/rss');
+    const lines = txt.split('\n').filter(l => l.startsWith('### ['));
     const out = [];
-    for (let i = 0; i < Math.min(items.length, 8); i++) {
-      const t = items[i].querySelector('title');
-      if (t) out.push(t.textContent);
+    for (const l of lines.slice(0, 10)) {
+      const m = l.match(/\[([^\]]+)\]/);
+      if (m) out.push(m[1]);
     }
-    return out.join(' ||| ');
+    return out.length ? out.join(' ||| ') : null;
   } catch(e){ return null; }
 }
 
@@ -242,6 +245,7 @@ async function ask(text){
       })
     });
     const j = await r.json();
+    if (j.error && j.error.code === 401) { addMsg('ai','Klíč chybí nebo je neplatný. Otevři odkaz, který ti poslal Hermes (s klíčem), nebo vlož klíč v ⚙️.'); return; }
     const out = (j.choices?.[0]?.message?.content || '').replace(/\*\*/g,'').replace(/[*_#>\-]{1,2}/g,'');
     if (!out) throw new Error(JSON.stringify(j).slice(0,120));
     history.push({ role:'user', content: text });
