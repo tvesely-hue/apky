@@ -85,18 +85,23 @@ function addMsg(cls, text){
 }
 function setStatus(t){ statusEl.textContent = t; }
 
-/* ====== HLAS: verze 8 — NOVÝ Audio element pro každý kus + zpoždění po vypnutí mikrofonu ====== */
-/* iOS: sdílený Audio element po rec.stop() nehrá (mikrofon drží audio session, uvolní se až za pár ms).
-   Proto: každý kus = nový Audio + play až 350 ms po vypnutí mikrofonu. */
+/* ====== HLAS: verze 44 — NATIVNÍ hlas iOS (speechSynthesis) jako hlavní, Google TTS jako záloha ======
+   Proč: řetězení Google TTS kusů je na iOS křehké (odpověď se nepřečte celá).
+   Nativní hlas přečte celou odpověď najednou. Známé iOS bugy, které opravujeme:
+   1) utterance v lokální proměnné → garbage collector ji zabije → přečte jen pár slov → DRŽÍME ji v globální proměnné
+   2) na iOS se řeč po ~15 s zasekne → pravidelný pause()+resume() to udrží v chodu
+   3) hlas se vybírá asynchronně → hledáme český hlas s opakováním */
 
 function ttsUrl(text){
   return 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent(text.slice(0,190));
 }
 
-let activePlayers = [];   // všechny přehrávače — nový kus zastaví všechny předchozí (jinak hrají 2 hlasy současně)
-let speakId = 0;          // číslo generace — nová odpověď zruší starý queue (jinak starý timer spustí starý kus)
+let activePlayers = [];   // záložní přehrávače (Google TTS)
+let speakId = 0;          // číslo generace — nová odpověď zruší starý queue
+let currentUtter = null;  // DRŽENÉ reference — jinak GC přečte jen pár slov (známý bug)
+let speakTimer = null;    // pravidelný resume — ať se na iOS řeč nezasekne po 15 s
 
-function playParts(parts, i, myId){
+function playPartsGoogle(parts, i, myId){   // ZÁLOHA — jen když nativní hlas nefunguje
   if (i >= parts.length) { restartListening(); return; }
   // ZASTAVÍM všechny předchozí přehrávače — a jejich Timery (jinak hrají 2 hlasy současně)
   activePlayers.forEach(a => { try { a.pause(); } catch(_){} });
@@ -117,7 +122,7 @@ function playParts(parts, i, myId){
     if (myId !== speakId) return;   // stará odpověď — zrušeno
     try { p.pause(); } catch(_){}
     try { p.remove(); } catch(_){}   // vyhodím z DOM — ať se nenařadí stovky elementů
-    playParts(parts, i + 1, myId);
+    playPartsGoogle(parts, i + 1, myId);
   };
   p.onended = finish;
   p.onerror = () => { setStatus('🔊 Nepovedlo se přehrát'); finish(); };
@@ -135,16 +140,67 @@ function playParts(parts, i, myId){
   });
 }
 
+/* najde český hlas (načítá se asynchronně — zkusí to opakovaně) */
+function findCzechVoice(){
+  const vs = speechSynthesis.getVoices();
+  return vs.find(v => v.lang === 'cs-CZ') || vs.find(v => v.lang && v.lang.indexOf('cs') === 0) || null;
+}
+
 function speakNow(text){
-  // Zastavím všechny přehrávače — nová odpověď zastaví předchozí (jinak hrají 2 hlasy současně)
+  // Zastavím vše — nová odpověď zastaví předchozí
   activePlayers.forEach(a => { try { a.pause(); } catch(_){} });
   activePlayers = [];
-  speakId++;   // nová generace — starý timer nebude pokračovat
+  if (speakTimer) { clearInterval(speakTimer); speakTimer = null; }
+  try { speechSynthesis.cancel(); } catch(_){}
+  speakId++;
   const myId = speakId;
   speaking = true;   // blokace restartu mikrofonu během mluvení
   recActive = false;  // stará instance končí — nechcem, aby blokovala startRec po odpovědi
   try { rec && rec.stop(); } catch(_){}
   setStatus('🔴 Odpovídám…');
+  // 350 ms po rec.stop() — iOS potřebuje uvolnit audio session od mikrofonu
+  setTimeout(() => { if (myId === speakId) speakNative(text, myId); }, 350);
+}
+
+function speakNative(text, myId){
+  if (myId !== speakId) return;
+  if (typeof speechSynthesis === 'undefined') { playPartsGoogle(splitParts(text), 0, myId); return; }
+  const voice = findCzechVoice();
+  // NATIVNÍ HLAS: celá odpověď najednou — žádné kusy, žádné stahování
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'cs-CZ';
+  if (voice) u.voice = voice;
+  u.rate = 1.0;
+  u.volume = 1.0;
+  currentUtter = u;   // KRITICKÉ: držím referenci — jinak GC přečte jen pár slov
+  let finished = false;
+  const finish = () => {
+    if (finished || myId !== speakId) return;
+    finished = true;
+    if (speakTimer) { clearInterval(speakTimer); speakTimer = null; }
+    restartListening();
+  };
+  u.onend = finish;
+  u.onerror = (e) => {
+    // nativní hlas selhal → přepnu na Google TTS (fungovala verze 8)
+    if (finished || myId !== speakId) return;
+    finished = true;
+    if (speakTimer) { clearInterval(speakTimer); speakTimer = null; }
+    setStatus('🔊 Záložní hlas…');
+    playPartsGoogle(splitParts(text), 0, myId);
+  };
+  // iOS bug: řeč se zasekne po ~15 s — pravidelný pause()+resume() to udrží
+  speakTimer = setInterval(() => {
+    if (myId !== speakId) { clearInterval(speakTimer); speakTimer = null; return; }
+    try { speechSynthesis.pause(); speechSynthesis.resume(); } catch(_){}
+  }, 10000);
+  try { speechSynthesis.speak(u); } catch(e){
+    if (speakTimer) { clearInterval(speakTimer); speakTimer = null; }
+    playPartsGoogle(splitParts(text), 0, myId);
+  }
+}
+
+function splitParts(text){
   const sents = text.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) || [text];
   const parts = [];
   let cur = '';
@@ -153,19 +209,28 @@ function speakNow(text){
     else cur += s;
   }
   if (cur) parts.push(cur);
-  // 350 ms po rec.stop() — iOS potřebuje uvolnit audio session od mikrofonu
-  setTimeout(() => { if (myId === speakId) playParts(parts, 0, myId); }, 350);
+  return parts.length ? parts : [text];
 }
 
 function testSound(){
-  // Zastavím všechny přehrávače — a pak přehraju test (jinak hrají 2 hlasy současně)
+  // Zastavím vše — a pak přehraju test nativním hlasem
   activePlayers.forEach(a => { try { a.pause(); } catch(_){} });
   activePlayers = [];
-  // Přímo audio element — synchronně v gestu + bez Refereru (Google blokuje podle něj)
-  const p = new Audio(ttsUrl('Test zvuku. Slyšíš mě po celou větu?'));
-  p.referrerPolicy = 'no-referrer';
-  p.volume = 1;
-  p.play().then(()=>{ setStatus('Zvuk hraje ✅'); }).catch(e=>{ setStatus('Nepovedlo se přehrát: ' + (e.message||'')); });
+  try { speechSynthesis.cancel(); } catch(_){}
+  const u = new SpeechSynthesisUtterance('Test zvuku. Slyšíš mě po celou větu? Ať víme, že hlas funguje.');
+  u.lang = 'cs-CZ';
+  const v = findCzechVoice();
+  if (v) u.voice = v;
+  currentUtter = u;
+  u.onend = () => setStatus('Zvuk hraje ✅ — nativní hlas funguje');
+  u.onerror = () => {
+    // nativní hlas nehrá → zkusím Google TTS
+    const p = new Audio(ttsUrl('Test zvuku. Slyšíš mě po celou větu?'));
+    p.referrerPolicy = 'no-referrer';
+    p.volume = 1;
+    p.play().then(()=>{ setStatus('Zvuk hraje ✅ — záložní hlas'); }).catch(e=>{ setStatus('Nepovedlo se přehrát: ' + (e.message||'')); });
+  };
+  try { speechSynthesis.speak(u); } catch(e){ setStatus('Nepovedlo se přehrát'); }
 }
 
 /* po přehrání odpovědi se poslech sám obnoví — nemusíš vypínat/zapínat mikrofon */
