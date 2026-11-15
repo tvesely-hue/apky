@@ -45,6 +45,13 @@
 
 <script>
 let listening = false, rec = null, key = localStorage.getItem('gkey') || '';
+// auto-prefill z URL (?key=...)
+try {
+  const u = new URL(location.href);
+  const k = u.searchParams.get('key');
+  if (k) { localStorage.setItem('gkey', k); key = k; history.replaceState(null,'',location.pathname); }
+} catch(e){}
+
 const statusEl = document.getElementById('status');
 const chatEl = document.getElementById('chat');
 const micBtn = document.getElementById('micBtn');
