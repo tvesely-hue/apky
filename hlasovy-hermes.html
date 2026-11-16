@@ -30,7 +30,7 @@
 </style>
 </head>
 <body>
-<header>Hlasový Hermes 🎙️<button class="gear" onclick="document.getElementById('set').classList.toggle('show')">⚙️</button></header>
+<header>Hlasový Hermes 🎙️<button id="modeBtn" onclick="toggleMode()" style="padding:6px 10px;border-radius:8px;border:1px solid #444;background:#0e1117;color:#fff;font-size:12px;">🤖 GLM</button><button class="gear" onclick="document.getElementById('set').classList.toggle('show')">⚙️</button></header>
 
 <div id="set" class="set">
   <label style="font-size:13px;">OpenRouter API key (začíná sk-or-)</label>
@@ -84,6 +84,59 @@ function addMsg(cls, text){
   chatEl.scrollTop = chatEl.scrollHeight;
 }
 function setStatus(t){ statusEl.textContent = t; }
+
+/* ====== REŽIM: 🤖 GLM (rychlé, v appce) / 🧠 Hermes (přes most — má paměť a nástroje, ~1-2 min) ====== */
+let hermesMode = localStorage.getItem('hmode') === 'hermes';
+let bridgeUrl = localStorage.getItem('hbridge') || '';
+async function toggleMode(){
+  hermesMode = !hermesMode;
+  localStorage.setItem('hmode', hermesMode ? 'hermes' : 'glm');
+  updateModeBtn();
+  if (hermesMode) {
+    setStatus('🧠 Režim Hermes…');
+    try {
+      const r = await fetch('https://tvesely-hue.github.io/apky/bridge-url.txt', { cache: 'no-store' });
+      const u = (await r.text()).trim();
+      if (u) { bridgeUrl = u; localStorage.setItem('hbridge', u); }
+    } catch(e){}
+    if (!bridgeUrl) setStatus('🧠 Most nedostupný — zůstává GLM');
+    else setStatus(hermesMode ? '🧠 Hermes — mluv' : '🤖 GLM — mluv');
+  } else {
+    setStatus('🤖 GLM — mluv');
+  }
+}
+function updateModeBtn(){
+  const b = document.getElementById('modeBtn');
+  if (b) { b.textContent = hermesMode ? '🧠 Hermes' : '🤖 GLM'; b.style.background = hermesMode ? '#276749' : '#0e1117'; }
+}
+updateModeBtn();
+/* Hermes režim: pošle otázku na most, počká na odpověď (až 3 min), přečte ji */
+async function askBridge(text){
+  if (!bridgeUrl) return null;
+  const POST = bridgeUrl + '/bridge/ask';
+  const GET = bridgeUrl + '/bridge/answer?id=';
+  try {
+    const r = await fetch(POST, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ text: text })
+    });
+    if (!r.ok) throw new Error('ask ' + r.status);
+    const j = await r.json();
+    const qid = j.id;
+    if (!qid) throw new Error('no id');
+    for (let i = 0; i < 36; i++) {   // 36 × 5 s = 3 min
+      await new Promise(res => setTimeout(res, 5000));
+      const a = await fetch(GET + qid, { cache: 'no-store' });
+      const aj = await a.json();
+      if (aj.status === 'done' && aj.text) return aj.text;
+      setStatus('🧠 Hermes přemýšlí… (' + (i*5+5) + ' s)');
+    }
+    return null;   // timeout — GLM fallback
+  } catch(e) {
+    setStatus('🧠 Most nedostupný — GLM záloha');
+    return null;
+  }
+}
 
 /* ====== HLAS: verze 44 — NATIVNÍ hlas iOS (speechSynthesis) jako hlavní, Google TTS jako záloha ======
    Proč: řetězení Google TTS kusů je na iOS křehké (odpověď se nepřečte celá).
@@ -410,6 +463,13 @@ let history = [];
 async function ask(text){
   if (!key) { addMsg('ai','Nejdřív vlož OpenRouter key (⚙️ vpravo nahoře).'); speakNow('Nejdřív vlož klíč OpenRouter. Nahoře je ozubené kolo.'); return; }
   addMsg('me', text);
+  // REŽIM HERMES: otázka jde ke mně přes most (má paměť + nástroje); selže-li → GLM záloha
+  if (hermesMode) {
+    setStatus('🧠 Hermes přemýšlí…');
+    const bt = await askBridge(text);
+    if (bt) { addMsg('ai', bt); speakNow(bt); return; }
+    setStatus('🤔 GLM záloha…');
+  }
   setStatus('🤔 Přemýšlím…');
   const t = text.toLowerCase();
   let extra = '';
