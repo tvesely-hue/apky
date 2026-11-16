@@ -605,10 +605,24 @@ setInterval(() => {
 
 function toggleMic(){
   if (!SR) { addMsg('ai','Tvůj prohlížeč nepodporuje rozpoznávání řeči. Otevř v Safari (iPhone) nebo Chrome.'); return; }
-  if (listening) { listening = false; try { rec.stop(); } catch(_){} micBtn.classList.remove('listening'); setStatus('Vypnuto'); return; }
+  // POZOR: v hands-free je listening VŽDY true — klepnutí na 🎤 nesmí poslech VYPNOUT.
+  // Vypnout jde jen tehdy, když poslech SKUTEČNĚ běží (recActive) a nic nehrá.
+  if (listening && recActive && !speaking) {
+    listening = false;
+    try { rec.stop(); } catch(_){}
+    micBtn.classList.remove('listening');
+    micBtn.textContent = '🎤';
+    setStatus('Vypnuto — klepni pro zapnutí');
+    return;
+  }
+  // jinak: ZAPNI / RESTART poslech (tohle je cesta po odpovědi, po zamrzlém mikrofonu…)
   listening = true;
+  recActive = false;   // ať se nemele, že instance ještě běží
+  try { rec && rec.stop(); } catch(_){}
   micBtn.classList.add('listening');
-  startRec();
+  micBtn.textContent = '🎤';
+  setStatus('Mluv…');
+  setTimeout(() => { if (listening && !speaking) startRec(); }, 400);
 }
 </script>
 </body>
