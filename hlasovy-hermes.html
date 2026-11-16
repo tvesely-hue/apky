@@ -578,10 +578,16 @@ setInterval(() => {
 
 function toggleMic(){
   if (!SR) { addMsg('ai','Tvůj prohlížeč nepodporuje rozpoznávání řeči. Otevř v Safari (iPhone) nebo Chrome.'); return; }
-  // Klepnutí na tlačítko = VŽDY ZAPNI poslech (jednoduchý flow). Vypnout nemusíš —
-  // poslech se zastaví sám po položení otázky (a znovu zapne klepnutím).
-  listening = true;
+  // KOMPLETNÍ RESET — klepnutí na tlačítko vždy vynuluje VŠECHNO a zapne poslech.
+  // Kdyby cokoliv viselo (speaking/recActive/hráč), klepnutí to vyčistí — tlačítko NIKDY neumře.
+  try { speechSynthesis.cancel(); } catch(_){}
+  activePlayers.forEach(a => { try { a.pause(); } catch(_){} });
+  activePlayers = [];
+  speakId++;                 // zruším případný starý queue přehrávání
+  speaking = false;
   recActive = false;
+  listening = true;
+  recWatchdog = 0;
   micBtn.style.width = '88px';
   micBtn.style.padding = '0';
   micBtn.style.fontSize = '40px';
@@ -589,7 +595,9 @@ function toggleMic(){
   micBtn.classList.add('listening');
   setStatus('Mluv…');
   try { rec && rec.stop(); } catch(_){}   // kdyby nějaká instance visela
-  setTimeout(() => { if (listening && !speaking) startRec(); }, 400);
+  setTimeout(() => {
+    if (listening && !speaking) { try { startRec(); } catch(e){ setStatus('Mic: ' + e.message); } }
+  }, 400);
 }
 </script>
 </body>
