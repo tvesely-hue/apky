@@ -561,14 +561,11 @@ function micWarmup(){
 function startRec(){
   if (speaking) return;   // BĚHEM MLUVENÍ NIKDY NESPUSTÍMIKROFON — iOS přeruší zvuk
   if (recActive) return;  // instance už běží — nezačínat znovu (jinak smyčka startRec)
-  /* iOS PRAVIDLO: rec.start() musí být zavoláno PŘÍMO v gestu uživatele (klepnutí).
-     Každý await (getUserMedia, tichý zvuk) rozbije řetěz gesta → iOS SR tiše odmítne.
-     Proto ZÁDNÉ awaity před rec.start() — žádný warmup, žádný tichý zvuk. */
   rec = new SR();
   rec.lang = 'cs-CZ';
   rec.continuous = true;
   rec.interimResults = false;
-  rec.onstart = () => { recActive = true; recRetries = 0; setStatus('Mluv…'); recWatchdog = 0; };
+  rec.onstart = () => { recActive = true; setStatus('Mluv…'); recWatchdog = 0; };
   /* iOS: reset watchdogu i při každém zvuku — ať dlouhá souvislá věta neumře po 15 s */
   rec.onsoundstart = () => { recWatchdog = 0; };
   rec.onspeechstart = () => { recWatchdog = 0; };
@@ -581,13 +578,6 @@ function startRec(){
   rec.onerror = (e) => {
     recWatchdog = 0;
     if (e.error==='not-allowed') addMsg('ai','Musíš povolit mikrofon (Nastavení Safari → Mikrofon).');
-    // iOS: po přehrávání zvuku první pokus často selže ('aborted') — SAMO ZKUSÍM ZNOVU (max 4×)
-    else if (e.error==='aborted') {
-      /* iOS: start() MUSÍ být v gestu — timer-retry nefunguje. Požádám uživatele o klepnutí. */
-      micBtn.classList.remove('listening');
-      setStatus('⚠️ Klepni na tlačítko ZNOVU (iOS chce gesto)');
-      return;
-    }
     else if (e.error && e.error !== 'aborted' && e.error !== 'no-speech') setStatus('Mic: ' + e.error);
   };
   /* iOS: stejnou instanci po stop() znovu nespustí — VŽDY NOVÁ instance.
@@ -595,13 +585,13 @@ function startRec(){
   /* POROZUMĚNÍ po víc otázkách: Safari rozpoznávání časem zpomalí/zanikne — GLOBÁLNÍ hlídač:
      každých 5 s zkontroluje, jestli poslech žije; když ne, nabídne KLEPNI PRO POKRAČOVÁNÍ */
   rec.onend = () => {
+    const hadStarted = recActive;
     recActive = false;
-    if (listening && !speaking) {
-      micBtn.classList.remove('listening');
-      setStatus('🎤 Klepni na tlačítko pro pokračování');
-    }
+    if (hadStarted && listening && !speaking) { setTimeout(() => { if (listening && !speaking) startRec(); }, 700); }
   };
-  try { rec.start(); } catch(_){ setStatus('⚠️ Klepni na tlačítko ZNOVU'); }
+  try { rec.start(); } catch(_){
+    setTimeout(() => { if (listening && !speaking) startRec(); }, 1500);
+  }
 }
 
 /* WATCHDOG: když Safari poslech tiše zabije (žádný onend, žádný výsledek), po 15 s ticha ho restartujeme */
@@ -611,10 +601,9 @@ setInterval(() => {
     recWatchdog++;
     if (recWatchdog >= 15) {
       recWatchdog = 0;
-      recActive = false;
+      recActive = false;   // iOS tiše zabyl poslech bez onend — jinak startRec navždy blokován
       try { rec && rec.stop(); } catch(_){}
-      micBtn.classList.remove('listening');
-      setStatus('🎤 Klepni na tlačítko pro pokračování');
+      setTimeout(() => { if (listening && !speaking) startRec(); }, 500);
     }
   } else {
     recWatchdog = 0;
@@ -623,34 +612,18 @@ setInterval(() => {
 
 function toggleMic(){
   if (!SR) { addMsg('ai','Tvůj prohlížeč nepodporuje rozpoznávání řeči. Otevř v Safari (iPhone) nebo Chrome.'); return; }
-  // KOMPLETNÍ RESET — klepnutí na tlačítko vždy vynuluje VŠECHNO a zapne poslech.
-  // Kdyby cokoliv viselo (speaking/recActive/hráč), klepnutí to vyčistí — tlačítko NIKDY neumře.
-  try { speechSynthesis.cancel(); } catch(_){}
-  activePlayers.forEach(a => { try { a.pause(); } catch(_){} });
-  activePlayers = [];
-  speakId++;                 // zruším případný starý queue přehrávání
-  speaking = false;
-  recActive = false;
+  // Klepnutí na tlačítko = VŽDY ZAPNI poslech (jednoduchý flow). Vypnout nemusíš —
+  // poslech se zastaví sám po položení otázky (a znovu zapne klepnutím).
   listening = true;
-  recWatchdog = 0;
-  recRetries = 0;   // klepnutí na tlačítko = nová šance pro mikrofon (samo-nabíječka resetuje počet pokusů)
+  recActive = false;
   micBtn.style.width = '88px';
   micBtn.style.padding = '0';
   micBtn.style.fontSize = '40px';
   micBtn.textContent = '🎤';
   micBtn.classList.add('listening');
   setStatus('Mluv…');
-  try { rec && rec.stop(); } catch(_){}
-  /* iOS ZLATÉ PRAVIDLO: rec.start() musí být zavoláno PŘÍMO v klepnutí (gesto).
-     JAKÉKOLI setTimeout na cestě k start() = gesto zrušeno = iOS mikrofon TIŠE odmítne.
-     Proto startRec() tady, synchronně, bez čekání. */
-  startRec();
-  // Klepni kamkoli na obrazovku = taky gesto = taky platí
-  const bodyGo = (ev) => {
-    if (listening && !speaking && !recActive) { startRec(); }
-  };
-  document.addEventListener('touchstart', bodyGo, { passive: true });
-  document.addEventListener('click', bodyGo);
+  try { rec && rec.stop(); } catch(_){}   // kdyby nějaká instance visela
+  setTimeout(() => { if (listening && !speaking) startRec(); }, 400);
 }
 </script>
 </body>
