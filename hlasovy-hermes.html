@@ -42,11 +42,14 @@
 <div id="chat"></div>
 <div id="status">Klepi jednou na tlačítko — pak už jen mluv</div>
 <footer>
-  <div style="display:flex;gap:8px;width:100%;max-width:480px;align-items:center;">
-    <input id="txtIn" type="text" placeholder="…nebo napiš otázku (vždy funguje)" style="flex:1;padding:12px;border-radius:10px;border:1px solid #444;background:#111;color:#fff;font-size:15px;">
-    <button id="sendBtn" onclick="sendTxt()" style="padding:12px 18px;border-radius:10px;border:none;background:#2b6cb0;color:#fff;font-size:15px;font-weight:bold;">▶</button>
+  <div style="width:100%;max-width:520px;">
+    <input id="txtIn" type="text" placeholder="Napiš otázku tady — a odpověď ti přečtu hlasem" style="width:100%;padding:16px;border-radius:12px;border:2px solid #2b6cb0;background:#111;color:#fff;font-size:17px;">
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button id="sendBtn" onclick="sendTxt()" style="flex:1;padding:14px;border-radius:12px;border:none;background:#2b6cb0;color:#fff;font-size:17px;font-weight:bold;">▶ Zeptat se</button>
+      <button id="micBtn" onclick="toggleMic()" style="padding:14px 20px;border-radius:12px;border:1px solid #444;background:#222;color:#fff;font-size:20px;">🎤</button>
+    </div>
+    <div style="text-align:center;color:#888;font-size:12px;margin-top:6px;">Písemná otázka = 100 % spolehlivé. Mikrofon na iPhone Safari občas neodpoví — to je limit Safari.</div>
   </div>
-  <button id="micBtn" onclick="toggleMic()">🎤</button>
 </footer>
 
 <script>
@@ -652,8 +655,8 @@ function toggleMic(){
   micBtn.style.fontSize = '40px';
   micBtn.textContent = '🎤';
   micBtn.classList.add('listening');
-  setStatus('Mluv…');
-  try { rec && rec.stop(); } catch(_){}   // kdyby nějaká instance visela
+  setStatus('Mluv… ( kdyby nezareagoval, napiš otázku do pole dole — funguje vždy )');
+  try { rec && rec.stop(); } catch(_){}
   // KLEPNI KAMKOLI NA OBRAZOVKU (ne jen na tlačítko) — celé tělo dokumentu
   const bodyGo = (ev) => {
     if (listening && !speaking && !recActive) { startRec().catch(() => {}); }
@@ -665,14 +668,8 @@ function toggleMic(){
     // HLÍDAČ: jestli se mikrofon SKUTEČNĚ zapnul (i s probuzením). Kdyby ne — ZKUSÍM ZNOVU SÁM.
     setTimeout(() => {
       if (listening && !speaking && !recActive) {
-        setStatus('Mikrofon se probouzí…');
-        startRec().catch(() => {});
-        setTimeout(() => {
-          if (listening && !speaking && !recActive) {
-            setStatus('⚠️ Mikrofon se nezapnul — klepni na tlačítko ZNOVU');
-            micBtn.classList.remove('listening');
-          }
-        }, 3500);
+        micBtn.classList.remove('listening');
+        setStatus('⚠️ Mikrofon neodpovídá — napiš otázku do pole dole (funguje vždy)');
       }
     }, 3500);
   }, 400);
