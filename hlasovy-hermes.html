@@ -72,14 +72,8 @@ function addMsg(cls, text){
   const d = document.createElement('div');
   d.className = 'msg ' + cls;
   d.textContent = text;
-  if (cls === 'ai') {
-    const b = document.createElement('button');
-    b.className = 'playBtn';
-    b.textContent = '🔊 Přečíst';
-    // PRŮMÝ: jeden klepnutí = přímé přehrání audio elementu, bez řetězců
-    b.onclick = () => { speakNow(text); };
-    d.appendChild(b);
-  }
+  // POZOR: žádné tlačítko "🔊 Přečíst" pod zprávou — odpověď se čte SAMA hned po doručení.
+  // Tlačítko jinak mate (klepneš na něj místo "Ptát se dál" a odpověď se přečte ZNOVU).
   chatEl.appendChild(d);
   chatEl.scrollTop = chatEl.scrollHeight;
 }
@@ -361,7 +355,7 @@ async function weatherData(){
   const pos = await getPos();
   if (!pos) return null;
   const u = 'https://api.open-meteo.com/v1/forecast?latitude=' + pos.lat + '&longitude=' + pos.lon +
-    '&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code&timezone=auto&forecast_days=4';
+    '&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code&timezone=auto&forecast_days=7';
   const r = await fetch(u);
   const j = await r.json();
   return j;
@@ -426,15 +420,31 @@ let history = [];
 async function ask(text){
   if (!key) { addMsg('ai','Nejdřív vlož OpenRouter key (⚙️ vpravo nahoře).'); speakNow('Nejdřív vlož klíč OpenRouter. Nahoře je ozubené kolo.'); return; }
   addMsg('me', text);
-  // REŽIM HERMES: otázka jde ke mně přes most (má paměť + nástroje); selže-li → GLM záloha
+  // REŽIM HERMES: otázka jde ke mně přes most; selže-li → GLM záloha.
+  // POČASÍ: doplním data I v Hermes režimu (jinak GLM/neubovysětí odpověď nezná počasí)!
+  let btext = text;
+  const t = text.toLowerCase();
+  if (/počas|pocasi|jak.*venku|prš|déšť|dest|teplota|ochlad|venku/.test(t)) {
+    try {
+      const w = await weatherData();
+      if (w) {
+        btext = text + '\n\n[POČASÍ DATA (dnes max ' + Math.round(w.daily.temperature_2m_max[0]) +
+          ' °C, min ' + Math.round(w.daily.temperature_2m_min[0]) + ' °C; zítra max ' +
+          Math.round(w.daily.temperature_2m_max[1]) + ' °C, min ' + Math.round(w.daily.temperature_2m_min[1]) +
+          ' °C; předpověď dní 3-7: ' +
+          w.daily.temperature_2m_max.slice(2, 7).join(', ') + ' °C maxima, srážky ' +
+          w.daily.precipitation_sum.slice(0, 7).map(p => Math.round(p * 100) + '%').join(', ') +
+          ' ; dnes nyní ' + Math.round(w.current.temperature_2m) + ' °C, srážky ' + (w.current.precipitation||0) + ' mm)]';
+      }
+    } catch(e){}
+  }
   if (hermesMode) {
     setStatus('🧠 Hermes přemýšlí…');
-    const bt = await askBridge(text);
+    const bt = await askBridge(btext);
     if (bt) { addMsg('ai', bt); speakNow(bt); return; }
     setStatus('🤔 GLM záloha…');
   }
   setStatus('🤔 Přemýšlím…');
-  const t = text.toLowerCase();
   let extra = '';
   try {
     if (/počas|pocasi|jak.*venku|prš|déšť|dest|teplota|ochlad|venku/.test(t)) {
