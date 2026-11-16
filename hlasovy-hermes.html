@@ -143,71 +143,68 @@ async function askBridge(text){
 function ttsUrl(text){
   return 'https://translate.google.com/translate_tts?ie=UTF-8&tl=cs&client=tw-ob&q=' + encodeURIComponent(text.slice(0,190));
 }
+/* BRIDGE proxy: server nemá problém s Refererem a přidá CORS → fetch() funguje.
+   WebAudio (AudioContext) na rozdíl od přehrávače NEPŘERUŠÍ audio session → mikrofon nezabije. */
+let bridgeBase = localStorage.getItem('bridgeUrl') || '';
+function refreshBridgeUrl(){
+  fetch('https://tvesely-hue.github.io/apky/bridge-url.txt', {cache: 'no-store'})
+    .then(r => r.ok ? r.text() : '')
+    .then(u => { u = (u || '').trim(); if (u) { bridgeBase = u; localStorage.setItem('bridgeUrl', u); } })
+    .catch(() => {});
+}
+refreshBridgeUrl();
+setInterval(refreshBridgeUrl, 60000);   // tunel se rotuje — kontrolovat každou minutu
+function ttsProxyUrl(text){
+  return bridgeBase + '/bridge/tts?q=' + encodeURIComponent(text.slice(0,190));
+}
+/* WebAudio: dekódované audio kusy */
+let actx = null;
+function audioCtx(){
+  if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){} }
+  if (actx && actx.state === 'suspended') { try { actx.resume(); } catch(e){} }
+  return actx;
+}
 
 let activePlayers = [];   // záložní přehrávače (Google TTS)
 let speakId = 0;          // číslo generace — nová odpověď zruší starý queue
 let currentUtter = null;  // DRŽENÉ reference — jinak GC přečte jen pár slov (známý bug)
 let speakTimer = null;    // pravidelný resume — ať se na iOS řeč nezasekne po 15 s
 
-function playPartsGoogle(parts, i, myId, tries){   // ZÁLOHA — jen když nativní hlas nefunkční
+function playPartsGoogle(parts, i, myId, tries){   // WebAudio přes proxy mostu (mikrofon žije)
   if (i >= parts.length) { restartListening(); return; }
   tries = tries || 0;
-  // CHYBA KUSU: Google TTS občas jeden kus odmítne (404 / síť) — ZNOVU (max 3×), jinak by se "vynechal prostředek odpovědi"
-  // ZASTAVÍM všechny předchozí přehrávače — a jejich Timery (jinak hrají 2 hlasy současně)
-  activePlayers.forEach(a => { try { a.pause(); } catch(_){} });
-  activePlayers = [];
-  const p = new Audio(ttsUrl(parts[i]));
-  p.referrerPolicy = 'no-referrer';   // GOOGLE BLOKUJE podle Refereru (GitHub Pages) → vrací 404
-  p.volume = 1;
-  // iOS: audio element MUSÍ být v DOM, jinak ho Safari po 350 ms zlikviduje a nikdy nehrá
-  p.style.display = 'none';
-  document.body.appendChild(p);
-  activePlayers.push(p);
-  // iOS bug: onended se nezavolá vždy — fallback: po duration + 2 s pokračujeme vždy
-  let ended = false;
-  let timer = null;
-  const finish = () => {
-    if (ended) return; ended = true;
-    if (timer) clearTimeout(timer);
-    if (myId !== speakId) return;   // stará odpověď — zrušeno
-    try { p.pause(); } catch(_){}
-    try { p.remove(); } catch(_){}   // vyhodím z DOM — ať se nenařadí stovky elementů
-    playPartsGoogle(parts, i + 1, myId);
-  };
-  // iOS: NIKDY neukončím kus, když zvuk STÁLE HRAJE (přesně tohle uřízlo část poslední věty)
-  const finishSafe = () => {
-    if (ended) return;
-    if (!p.paused && !p.ended) { if (timer) clearTimeout(timer); timer = setTimeout(finishSafe, 2000); return; }
-    finish();
-  };
-  p.onended = finish;
-  p.onerror = () => {
-    if (myId !== speakId) return;
-    if (tries < 3) { setStatus('🔊 Opakuju kus…'); setTimeout(() => { if (myId === speakId) playPartsGoogle(parts, i, myId, tries + 1); }, 800); return; }
-    setStatus('🔊 Nepovedlo se přehrát');
-    finish();
-  };
-  p.addEventListener('loadedmetadata', () => {
-    // fallback: pevný 12 s časovač u ŘEZAL dlouhé kusy (část poslední věty) → odhad z délky TEXTU
-    const t = (isFinite(p.duration) && p.duration > 0)
-      ? p.duration * 1.5 + 3
-      : 90 * parts[i].length / 1000 + 5;
-    timer = setTimeout(finishSafe, t * 1000);
-  });
-  // pojistka i bez loadedmetadata (Google TTS někdy metadata nešle) — odhad z textu
-  if (!timer) timer = setTimeout(finishSafe, (90 * parts[i].length / 1000 + 8) * 1000);
-  const pp = p.play();
-  if (pp) pp.catch(e => {
-    // "interrupted by pause/load" = nezávažné (iOS interno) — jen když se opravdu nepovedlo start → ZNOVU
-    if (e.message && e.message.indexOf('interrupted') >= 0) return;
-    if (myId !== speakId) return;
-    if (tries < 3) { setTimeout(() => { if (myId === speakId) playPartsGoogle(parts, i, myId, tries + 1); }, 800); return; }
-    setStatus('🔊 Nepovedlo se přehrát: ' + (e.message||''));
-    finish();
-  });
+  const ctx = audioCtx();
+  if (!ctx) { setStatus('🔊 Nepovedlo se přehrát (audio)'); restartListening(); return; }
+  setStatus('🔊 Čtu…');
+  fetch(ttsProxyUrl(parts[i]), {cache: 'no-store'})
+    .then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.arrayBuffer(); })
+    .then(buf => ctx.decodeAudioData(buf))
+    .then(audio => {
+      if (myId !== speakId) return;
+      const src = ctx.createBufferSource();
+      src.buffer = audio;
+      src.connect(ctx.destination);
+      activePlayers.push(src);
+      // WebAudio: onended JE SPOLEHLIVÉ — a fallback timer jen pojistka
+      const dur = audio.duration || 5;
+      let done = false;
+      const finish = () => {
+        if (done) return; done = true;
+        if (myId !== speakId) return;
+        try { src.stop(); } catch(e){}
+        playPartsGoogle(parts, i + 1, myId);
+      };
+      src.onended = finish;
+      setTimeout(finish, dur * 1000 + 2500);
+      src.start();
+    })
+    .catch(e => {
+      if (myId !== speakId) return;
+      if (tries < 3) { setStatus('🔊 Opakuju kus…'); setTimeout(() => { if (myId === speakId) playPartsGoogle(parts, i, myId, tries + 1); }, 800); return; }
+      setStatus('🔊 Nepovedlo se přehrát: ' + (e.message || ''));
+      restartListening();
+    });
 }
-
-/* najde český hlas (načítá se asynchronně — zkusí to opakovaně) */
 function findCzechVoice(){
   const vs = speechSynthesis.getVoices();
   return vs.find(v => v.lang === 'cs-CZ') || vs.find(v => v.lang && v.lang.indexOf('cs') === 0) || null;
@@ -215,7 +212,7 @@ function findCzechVoice(){
 
 function speakNow(text){
   // Zastavím vše — nová odpověď zastaví předchozí
-  activePlayers.forEach(a => { try { a.pause(); } catch(_){} });
+  activePlayers.forEach(a => { try { a.pause ? a.pause() : a.stop(); } catch(_){} });
   activePlayers = [];
   if (speakTimer) { clearInterval(speakTimer); speakTimer = null; }
   try { speechSynthesis.cancel(); } catch(_){}
@@ -302,7 +299,7 @@ function splitParts(text){
 
 function testSound(){
   // Zastavím vše — a pak přehraju test nativním hlasem
-  activePlayers.forEach(a => { try { a.pause(); } catch(_){} });
+  activePlayers.forEach(a => { try { a.pause ? a.pause() : a.stop(); } catch(_){} });
   activePlayers = [];
   try { speechSynthesis.cancel(); } catch(_){}
   const u = new SpeechSynthesisUtterance('Test zvuku. Slyšíš mě po celou větu? Ať víme, že hlas funguje.');
@@ -623,6 +620,7 @@ function toggleMic(){
   micBtn.classList.add('listening');
   setStatus('Mluv…');
   try { rec && rec.stop(); } catch(_){}   // kdyby nějaká instance visela
+  audioCtx();   // v gestu: unlock AudioContext (ať první přehrání neblokuje)
   setTimeout(() => { if (listening && !speaking) startRec(); }, 400);
 }
 </script>
