@@ -526,9 +526,22 @@ let recActive = false;   // instance SKUTEČNĚ naběhla (onstart) — jinak one
 
 let recRetries = 0;
 
-function startRec(){
+/* iOS: rozpoznávání po přehrání zvuku druhý den nežije — pomůže ZNOVU VZÍT PRÁVA K MIKROFONU
+   (getUserMedia "probudí" audio session). Vrácený stream hned zavřu, ať ikonka neskáče. */
+function micWarmup(){
+  return new Promise((res) => {
+    try {
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(s => { s.getTracks().forEach(t => t.stop()); res(true); })
+        .catch(() => res(false));
+    } catch(e){ res(false); }
+  });
+}
+
+async function startRec(){
   if (speaking) return;   // BĚHEM MLUVENÍ NIKDY NESPUSTÍMIKROFON — iOS přeruší zvuk
   if (recActive) return;  // instance už běží — nezačínat znovu (jinak smyčka startRec)
+  await micWarmup();      // KOMPLETNĚ PROBUDÍ audio session po přehrání — řeší "podruhé nereaguje"
   rec = new SR();
   rec.lang = 'cs-CZ';
   rec.continuous = true;
@@ -561,10 +574,12 @@ function startRec(){
   rec.onend = () => {
     const hadStarted = recActive;
     recActive = false;
-    if (hadStarted && listening && !speaking) { setTimeout(() => { if (listening && !speaking) startRec(); }, 700); }
+    if (hadStarted && listening && !speaking) {
+      setTimeout(() => { if (listening && !speaking) startRec().catch(() => {}); }, 700);
+    }
   };
   try { rec.start(); } catch(_){
-    setTimeout(() => { if (listening && !speaking) startRec(); }, 1500);
+    setTimeout(() => { if (listening && !speaking) startRec().catch(() => {}); }, 1500);
   }
 }
 
@@ -605,13 +620,18 @@ function toggleMic(){
   setStatus('Mluv…');
   try { rec && rec.stop(); } catch(_){}   // kdyby nějaká instance visela
   setTimeout(() => {
-    if (listening && !speaking) { try { startRec(); } catch(e){ setStatus('Mic: ' + e.message); } }
-    // HLÍDAČ: jestli se mikrofon SKUTEČNĚ zapnul. Kdyby ne (iOS ticho), dá to vědět —
-    // a klepnutí znovu (recRetries se resetuje) to vyzkouší novou instanci.
+    if (listening && !speaking) startRec().catch(e => setStatus('Mic: ' + e.message));
+    // HLÍDAČ: jestli se mikrofon SKUTEČNĚ zapnul (i s probuzením). Kdyby ne — ZKUSÍM ZNOVU SÁM.
     setTimeout(() => {
       if (listening && !speaking && !recActive) {
-        setStatus('⚠️ Mikrofon se nezapnul — klepni na tlačítko ZNOVU');
-        micBtn.classList.remove('listening');
+        setStatus('Mikrofon se probouzí…');
+        startRec().catch(() => {});
+        setTimeout(() => {
+          if (listening && !speaking && !recActive) {
+            setStatus('⚠️ Mikrofon se nezapnul — klepni na tlačítko ZNOVU');
+            micBtn.classList.remove('listening');
+          }
+        }, 3500);
       }
     }, 3500);
   }, 400);
