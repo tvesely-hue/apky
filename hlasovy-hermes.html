@@ -595,10 +595,10 @@ function startRec(){
   /* POROZUMĚNÍ po víc otázkách: Safari rozpoznávání časem zpomalí/zanikne — GLOBÁLNÍ hlídač:
      každých 5 s zkontroluje, jestli poslech žije; když ne, nabídne KLEPNI PRO POKRAČOVÁNÍ */
   rec.onend = () => {
-    const hadStarted = recActive;
     recActive = false;
-    if (hadStarted && listening && !speaking) {
-      setTimeout(() => { if (listening && !speaking) startRec(); }, 700);
+    if (listening && !speaking) {
+      micBtn.classList.remove('listening');
+      setStatus('🎤 Klepni na tlačítko pro pokračování');
     }
   };
   try { rec.start(); } catch(_){ setStatus('⚠️ Klepni na tlačítko ZNOVU'); }
@@ -611,9 +611,10 @@ setInterval(() => {
     recWatchdog++;
     if (recWatchdog >= 15) {
       recWatchdog = 0;
-      recActive = false;   // iOS tiše zabyl poslech bez onend — jinak startRec navždy blokován
+      recActive = false;
       try { rec && rec.stop(); } catch(_){}
-      setTimeout(() => { if (listening && !speaking) startRec(); }, 500);
+      micBtn.classList.remove('listening');
+      setStatus('🎤 Klepni na tlačítko pro pokračování');
     }
   } else {
     recWatchdog = 0;
@@ -638,24 +639,18 @@ function toggleMic(){
   micBtn.style.fontSize = '40px';
   micBtn.textContent = '🎤';
   micBtn.classList.add('listening');
-  setStatus('Mluv… ( kdyby nezareagoval, napiš otázku do pole dole — funguje vždy )');
+  setStatus('Mluv…');
   try { rec && rec.stop(); } catch(_){}
-  // KLEPNI KAMKOLI NA OBRAZOVKU (ne jen na tlačítko) — celé tělo dokumentu
+  /* iOS ZLATÉ PRAVIDLO: rec.start() musí být zavoláno PŘÍMO v klepnutí (gesto).
+     JAKÉKOLI setTimeout na cestě k start() = gesto zrušeno = iOS mikrofon TIŠE odmítne.
+     Proto startRec() tady, synchronně, bez čekání. */
+  startRec();
+  // Klepni kamkoli na obrazovku = taky gesto = taky platí
   const bodyGo = (ev) => {
     if (listening && !speaking && !recActive) { startRec(); }
   };
   document.addEventListener('touchstart', bodyGo, { passive: true });
   document.addEventListener('click', bodyGo);
-  setTimeout(() => {
-    if (listening && !speaking) startRec();
-    // HLÍDAČ: jestli se mikrofon SKUTEČNĚ zapnul (i s probuzením). Kdyby ne — ZKUSÍM ZNOVU SÁM.
-    setTimeout(() => {
-      if (listening && !speaking && !recActive) {
-        micBtn.classList.remove('listening');
-        setStatus('⚠️ Mikrofon neodpovídá — napiš otázku do pole dole (funguje vždy)');
-      }
-    }, 3500);
-  }, 400);
 }
 </script>
 </body>
