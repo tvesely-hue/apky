@@ -327,58 +327,21 @@ function testSound(){
 }
 
 /* po přehrání odpovědi se poslech sám obnoví — nemusíš vypínat/zapínat mikrofon */
+/* === JEDNODUCHÝ FLOW (podle přání Tomáše): mluvíš → odpověď → KLEPNI NA TLAČÍTKO → mluvíš zase ===
+   Žádné automatické zapínání poslechu — to na iOS opakovaně selhává. Po odpovědi se poslech
+   zastaví a čeká na klepnutí. Klepnutí kamkoli = start poslechu (100 % spolehlivý gesto). */
 function restartListening(){
-  speaking = false;   // mluvení skončilo — mikrofon se může zase zapnout
-  recActive = false;  // POVINNÉ vynulování — jinak mrtvá instance blokuje startRec navždy
-  // HANDS-FREE: poslech se sám zapne VŽDY (klepnutí na 🎤 je potřeba jen na úplném startu)
-  listening = true;
-  micBtn.classList.add('listening');
-  setStatus('Mluv…');
+  speaking = false;
+  recActive = false;
   try { rec && rec.stop(); } catch(_){}
-  setTimeout(() => {
-    if (!listening || speaking) return;
-    startRec();
-    // iOS: mikrofon po mluvení NEVŽDY sám naběhne → pojistka: klepni KAMKOLI na obrazovku = pokračování
-    setTimeout(() => {
-      if (listening && !speaking && !recActive) {
-        setStatus('🎤 Klepni kamkoli na obrazovku pro pokračování');
-        micBtn.textContent = '🎤 Klepni pro pokračování';
-        const go = (ev) => {
-          if (!listening || speaking) return;
-          document.removeEventListener('touchstart', go);
-          document.removeEventListener('click', go);
-          micBtn.textContent = '🎤';
-          setStatus('Mluv…');
-          startRec();
-        };
-        document.addEventListener('touchstart', go, { once: true, passive: true });
-        document.addEventListener('click', go, { once: true });
-      }
-    }, 1500);
-  }, 1200);
+  listening = false;
+  micBtn.classList.remove('listening');
+  micBtn.textContent = '🎤 Ptát se dál';
+  micBtn.style.width = 'auto';
+  micBtn.style.padding = '0 24px';
+  micBtn.style.fontSize = '22px';
+  setStatus('Přečteno ✅ — klepni na tlačítko a zeptej se znovu');
 }
-
-/* GLOBÁLNÍ hlídač poslechu: Safari rozpoznávání po více otázkách potichu zanikne.
-   Každých 5 s: posloucháme? Když ne (a nic nehrá), nabídne KLEPNI PRO POKRAČOVÁNÍ —
-   klepnutí kamkoli restartuje mikrofon. Tohle řeší "po pár otázkách už to nejde". */
-setInterval(() => {
-  if (!listening || speaking || recActive) return;
-  const s = document.getElementById('status')?.textContent || '';
-  if (s.indexOf('Klepni') >= 0) return;   // nabídka už visí
-  setStatus('🎤 Klepni pro pokračování');
-  micBtn.textContent = '🎤 Klepni pro pokračování';
-  const go = (ev) => {
-    if (!listening || speaking) return;
-    document.removeEventListener('touchstart', go);
-    document.removeEventListener('click', go);
-    micBtn.textContent = '🎤';
-    setStatus('Mluv…');
-    recActive = false;
-    startRec();
-  };
-  document.addEventListener('touchstart', go, { once: true, passive: true });
-  document.addEventListener('click', go, { once: true });
-}, 5000);
 
 /* ====== ZPRÁVY / API ====== */
 /* zjištění polohy (GPS) — pro počasí */
@@ -605,23 +568,17 @@ setInterval(() => {
 
 function toggleMic(){
   if (!SR) { addMsg('ai','Tvůj prohlížeč nepodporuje rozpoznávání řeči. Otevř v Safari (iPhone) nebo Chrome.'); return; }
-  // POZOR: v hands-free je listening VŽDY true — klepnutí na 🎤 nesmí poslech VYPNOUT.
-  // Vypnout jde jen tehdy, když poslech SKUTEČNĚ běží (recActive) a nic nehrá.
-  if (listening && recActive && !speaking) {
-    listening = false;
-    try { rec.stop(); } catch(_){}
-    micBtn.classList.remove('listening');
-    micBtn.textContent = '🎤';
-    setStatus('Vypnuto — klepni pro zapnutí');
-    return;
-  }
-  // jinak: ZAPNI / RESTART poslech (tohle je cesta po odpovědi, po zamrzlém mikrofonu…)
+  // Klepnutí na tlačítko = VŽDY ZAPNI poslech (jednoduchý flow). Vypnout nemusíš —
+  // poslech se zastaví sám po položení otázky (a znovu zapne klepnutím).
   listening = true;
-  recActive = false;   // ať se nemele, že instance ještě běží
-  try { rec && rec.stop(); } catch(_){}
-  micBtn.classList.add('listening');
+  recActive = false;
+  micBtn.style.width = '88px';
+  micBtn.style.padding = '0';
+  micBtn.style.fontSize = '40px';
   micBtn.textContent = '🎤';
+  micBtn.classList.add('listening');
   setStatus('Mluv…');
+  try { rec && rec.stop(); } catch(_){}   // kdyby nějaká instance visela
   setTimeout(() => { if (listening && !speaking) startRec(); }, 400);
 }
 </script>
