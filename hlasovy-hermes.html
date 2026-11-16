@@ -108,6 +108,13 @@ updateModeBtn();
 /* Hermes režim: pošle otázku na most, počká na odpověď (až 3 min), přečte ji */
 /* LONG verze: čeká až 6 min (72 × 5 s) — v Hermes režimu GLM NEODPOVÍDÁ, Tomáš počká */
 async function askBridgeLong(text){
+  /* TUNEL SE ROTUJE: před každým POSTEM si čerstvě vezmu aktuální adresu z GitHubu —
+     jinak otázka jde na starou (mrtvou) adresu a "nedostal jsem odpověď v čase". */
+  try {
+    const r2 = await fetch('https://tvesely-hue.github.io/apky/bridge-url.txt', { cache: 'no-store' });
+    const u2 = (await r2.text()).trim();
+    if (u2) { bridgeUrl = u2; localStorage.setItem('hbridge', u2); bridgeBase = u2; localStorage.setItem('bridgeUrl', u2); }
+  } catch(_){}
   if (!bridgeUrl) return null;
   const POST = bridgeUrl + '/bridge/ask';
   const GET = bridgeUrl + '/bridge/answer?id=';
@@ -122,9 +129,18 @@ async function askBridgeLong(text){
     if (!qid) throw new Error('no id');
     for (let i = 0; i < 72; i++) {   // 72 × 5 s = 6 min
       await new Promise(res => setTimeout(res, 5000));
-      const a = await fetch(GET + qid, { cache: 'no-store' });
-      const aj = await a.json();
-      if (aj.status === 'done' && aj.text) return aj.text;
+      try {
+        const a = await fetch(GET + qid, { cache: 'no-store' });
+        const aj = await a.json();
+        if (aj.status === 'done' && aj.text) return aj.text;
+      } catch(_){
+        /* tunel se mezitím zrotoval → čerstvá adresa a pokračovat */
+        try {
+          const r3 = await fetch('https://tvesely-hue.github.io/apky/bridge-url.txt', { cache: 'no-store' });
+          const u3 = (await r3.text()).trim();
+          if (u3) { bridgeUrl = u3; localStorage.setItem('hbridge', u3); bridgeBase = u3; localStorage.setItem('bridgeUrl', u3); }
+        } catch(_){}
+      }
       setStatus('🧠 Hermes přemýšlí… (' + (i*5+5) + ' s)');
     }
     return null;   // po 6 min — appka srozumitelně řekne, GLM se nezapne
