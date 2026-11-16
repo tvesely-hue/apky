@@ -640,7 +640,6 @@ function startRec(){
   rec.onresult = (e) => {
     recWatchdog = 0;
     let t = e.results[e.results.length-1][0].transcript.trim();
-    /* STT OPRAVY: Safari často pokřiví jména/tec. výrazy — opravím před odesláním */
     t = fixTranscript(t);
     if (t) ask(t);
   };
