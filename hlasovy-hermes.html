@@ -185,6 +185,7 @@ function speakNative(text, myId){
     currentUtter = u;   // KRITICKÉ: držím referenci — jinak GC přečte jen pár slov
     const i = idx;
     let moved = false;
+    let started = false;
     const advance = () => {
       if (moved) return; moved = true;
       if (watchdog) { clearTimeout(watchdog); watchdog = null; }
@@ -195,9 +196,19 @@ function speakNative(text, myId){
     };
     u.onend = advance;
     u.onerror = advance;
-    // iOS: onend se někdy NIKDY nezavolá → záložní odhad délky (mśród ms/znak + rezerva)
+    const fallbackToGoogle = () => {
+      if (moved) return; moved = true;
+      if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+      if (myId !== speakId) return;
+      try { speechSynthesis.cancel(); } catch(_){}
+      playPartsGoogle(splitParts(text), 0, myId);
+    };
+    u.onstart = () => { started = true; };
+    // iOS: onend se někdy NIKDY nezavolá → záložní odhad délky (mźdzs/znak + rezerva)
     const est = 90 * parts[i].length + 3500;
     watchdog = setTimeout(advance, est);
+    // iOS: native hlas se někdy VŮBEC nerozjede (žádné onstart, žádná chyba) → Google TTS
+    setTimeout(() => { if (!started && !moved) fallbackToGoogle(); }, 3000);
     try { speechSynthesis.speak(u); } catch(e){
       // nativní hlas úplně nefunkční → záloha Google TTS (fungovala verze 8)
       if (speakTimer) { clearInterval(speakTimer); speakTimer = null; }
