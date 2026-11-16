@@ -483,6 +483,12 @@ async function ask(text){
   if (hermesMode) {
     /* PŘANÍ TOMÁŠE: v Hermes režimu NEODPOVÍDÁ GLM NIKDY — čeká se na mě přes most.
        Důvod: GLM nemá internet a Tomáš si chce povídat se mnou. Čekání = až 6 min. */
+    /* MIKROFON VYPNOUT: během mého přemýšlení i čtení odpovědi NIKDY neposlouchá —
+       aby okolní mluva nešla do appky. Zase se zapne až po přečtení (klepnutím). */
+    listening = false;
+    try { rec && rec.stop(); } catch(_){}
+    recActive = false;
+    micBtn.classList.remove('listening');
     setStatus('🧠 Hermes přemýšlí…');
     const bt = await askBridgeLong(btext);
     if (bt) { addMsg('ai', bt); speakNow(bt); return; }
