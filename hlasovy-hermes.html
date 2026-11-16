@@ -106,6 +106,34 @@ function updateModeBtn(){
 }
 updateModeBtn();
 /* Hermes režim: pošle otázku na most, počká na odpověď (až 3 min), přečte ji */
+/* LONG verze: čeká až 6 min (72 × 5 s) — v Hermes režimu GLM NEODPOVÍDÁ, Tomáš počká */
+async function askBridgeLong(text){
+  if (!bridgeUrl) return null;
+  const POST = bridgeUrl + '/bridge/ask';
+  const GET = bridgeUrl + '/bridge/answer?id=';
+  try {
+    const r = await fetch(POST, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ text: text })
+    });
+    if (!r.ok) throw new Error('ask ' + r.status);
+    const j = await r.json();
+    const qid = j.id;
+    if (!qid) throw new Error('no id');
+    for (let i = 0; i < 72; i++) {   // 72 × 5 s = 6 min
+      await new Promise(res => setTimeout(res, 5000));
+      const a = await fetch(GET + qid, { cache: 'no-store' });
+      const aj = await a.json();
+      if (aj.status === 'done' && aj.text) return aj.text;
+      setStatus('🧠 Hermes přemýšlí… (' + (i*5+5) + ' s)');
+    }
+    return null;   // po 6 min — appka srozumitelně řekne, GLM se nezapne
+  } catch(e) {
+    setStatus('🧠 Most nedostupný');
+    return null;
+  }
+}
+
 async function askBridge(text){
   if (!bridgeUrl) return null;
   const POST = bridgeUrl + '/bridge/ask';
@@ -437,10 +465,15 @@ async function ask(text){
     } catch(e){}
   }
   if (hermesMode) {
+    /* PŘANÍ TOMÁŠE: v Hermes režimu NEODPOVÍDÁ GLM NIKDY — čeká se na mě přes most.
+       Důvod: GLM nemá internet a Tomáš si chce povídat se mnou. Čekání = až 6 min. */
     setStatus('🧠 Hermes přemýšlí…');
-    const bt = await askBridge(btext);
+    const bt = await askBridgeLong(btext);
     if (bt) { addMsg('ai', bt); speakNow(bt); return; }
-    setStatus('🤔 GLM záloha…');
+    /* most po 6 min neodpověděl → chybou nehodí, jen srozumitelně řekne */
+    addMsg('ai', 'Nedostal jsem odpověď v čase. Zopakuj otázku, prosím.');
+    speakNow('Nedostal jsem odpověď v čase. Zopakuj otázku, prosím.');
+    return;
   }
   setStatus('🤔 Přemýšlím…');
   let extra = '';
