@@ -526,6 +526,25 @@ let recActive = false;   // instance SKUTEČNĚ naběhla (onstart) — jinak one
 
 let recRetries = 0;
 
+/* NESLYŠITELNÝ zvuk (klíčový trik): iOS Safari po přehrání odpovědi drží audio session
+   a rozpoznávání řeči pak "aborted". Přehrání tiché vlny ZNOVU OTEVŘE audio session
+   v gestu uživatele a potom SR naběhne. */
+let silentAudio = null;
+function playSilentThenStart(){
+  return new Promise((res) => {
+    try {
+      if (!silentAudio) {
+        silentAudio = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');
+        silentAudio.volume = 0;
+      }
+      silentAudio.currentTime = 0;
+      const p = silentAudio.play();
+      if (p) p.then(() => { silentAudio.pause(); res(true); }).catch(() => res(false));
+      else res(true);
+    } catch(e){ res(false); }
+  });
+}
+
 /* iOS: rozpoznávání po přehrání zvuku druhý den nežije — pomůže ZNOVU VZÍT PRÁVA K MIKROFONU
    (getUserMedia "probudí" audio session). Vrácený stream hned zavřu, ať ikonka neskáče. */
 function micWarmup(){
@@ -542,6 +561,7 @@ async function startRec(){
   if (speaking) return;   // BĚHEM MLUVENÍ NIKDY NESPUSTÍMIKROFON — iOS přeruší zvuk
   if (recActive) return;  // instance už běží — nezačínat znovu (jinak smyčka startRec)
   await micWarmup();      // KOMPLETNĚ PROBUDÍ audio session po přehrání — řeší "podruhé nereaguje"
+  await playSilentThenStart();   // NESLYŠITELNÝ zvuk = otevře audio session, pak SR naběhne
   rec = new SR();
   rec.lang = 'cs-CZ';
   rec.continuous = true;
@@ -619,6 +639,12 @@ function toggleMic(){
   micBtn.classList.add('listening');
   setStatus('Mluv…');
   try { rec && rec.stop(); } catch(_){}   // kdyby nějaká instance visela
+  // KLEPNI KAMKOLI NA OBRAZOVKU (ne jen na tlačítko) — celé tělo dokumentu
+  const bodyGo = (ev) => {
+    if (listening && !speaking && !recActive) { startRec().catch(() => {}); }
+  };
+  document.addEventListener('touchstart', bodyGo, { passive: true });
+  document.addEventListener('click', bodyGo);
   setTimeout(() => {
     if (listening && !speaking) startRec().catch(e => setStatus('Mic: ' + e.message));
     // HLÍDAČ: jestli se mikrofon SKUTEČNĚ zapnul (i s probuzením). Kdyby ne — ZKUSÍM ZNOVU SÁM.
