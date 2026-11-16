@@ -524,6 +524,8 @@ let speaking = false;   // hraje odpověď — mikrofon se nikdy nespustí (jina
 
 let recActive = false;   // instance SKUTEČNĚ naběhla (onstart) — jinak onend smyčka spouští startRec dokola
 
+let recRetries = 0;
+
 function startRec(){
   if (speaking) return;   // BĚHEM MLUVENÍ NIKDY NESPUSTÍMIKROFON — iOS přeruší zvuk
   if (recActive) return;  // instance už běží — nezačínat znovu (jinak smyčka startRec)
@@ -531,7 +533,7 @@ function startRec(){
   rec.lang = 'cs-CZ';
   rec.continuous = true;
   rec.interimResults = false;
-  rec.onstart = () => { recActive = true; setStatus('Mluv…'); recWatchdog = 0; };
+  rec.onstart = () => { recActive = true; recRetries = 0; setStatus('Mluv…'); recWatchdog = 0; };
   /* iOS: reset watchdogu i při každém zvuku — ať dlouhá souvislá věta neumře po 15 s */
   rec.onsoundstart = () => { recWatchdog = 0; };
   rec.onspeechstart = () => { recWatchdog = 0; };
@@ -544,6 +546,12 @@ function startRec(){
   rec.onerror = (e) => {
     recWatchdog = 0;
     if (e.error==='not-allowed') addMsg('ai','Musíš povolit mikrofon (Nastavení Safari → Mikrofon).');
+    // iOS: po přehrávání zvuku první pokus často selže ('aborted') — SAMO ZKUSÍM ZNOVU (max 4×)
+    else if (e.error==='aborted' && recRetries < 4) {
+      recRetries++;
+      setTimeout(() => { if (listening && !speaking && !recActive) startRec(); }, 800);
+      return;
+    }
     else if (e.error && e.error !== 'aborted' && e.error !== 'no-speech') setStatus('Mic: ' + e.error);
   };
   /* iOS: stejnou instanci po stop() znovu nespustí — VŽDY NOVÁ instance.
@@ -588,6 +596,7 @@ function toggleMic(){
   recActive = false;
   listening = true;
   recWatchdog = 0;
+  recRetries = 0;   // klepnutí na tlačítko = nová šance pro mikrofon (samo-nabíječka resetuje počet pokusů)
   micBtn.style.width = '88px';
   micBtn.style.padding = '0';
   micBtn.style.fontSize = '40px';
@@ -597,6 +606,14 @@ function toggleMic(){
   try { rec && rec.stop(); } catch(_){}   // kdyby nějaká instance visela
   setTimeout(() => {
     if (listening && !speaking) { try { startRec(); } catch(e){ setStatus('Mic: ' + e.message); } }
+    // HLÍDAČ: jestli se mikrofon SKUTEČNĚ zapnul. Kdyby ne (iOS ticho), dá to vědět —
+    // a klepnutí znovu (recRetries se resetuje) to vyzkouší novou instanci.
+    setTimeout(() => {
+      if (listening && !speaking && !recActive) {
+        setStatus('⚠️ Mikrofon se nezapnul — klepni na tlačítko ZNOVU');
+        micBtn.classList.remove('listening');
+      }
+    }, 3500);
   }, 400);
 }
 </script>
