@@ -126,6 +126,12 @@ function playPartsGoogle(parts, i, myId, tries){   // ZÁLOHA — jen když nati
     try { p.remove(); } catch(_){}   // vyhodím z DOM — ať se nenařadí stovky elementů
     playPartsGoogle(parts, i + 1, myId);
   };
+  // iOS: NIKDY neukončím kus, když zvuk STÁLE HRAJE (přesně tohle uřízlo část poslední věty)
+  const finishSafe = () => {
+    if (ended) return;
+    if (!p.paused && !p.ended) { if (timer) clearTimeout(timer); timer = setTimeout(finishSafe, 2000); return; }
+    finish();
+  };
   p.onended = finish;
   p.onerror = () => {
     if (myId !== speakId) return;
@@ -134,10 +140,14 @@ function playPartsGoogle(parts, i, myId, tries){   // ZÁLOHA — jen když nati
     finish();
   };
   p.addEventListener('loadedmetadata', () => {
-    // Google TTS stream = duration Infinity → fallback nesmí být 0 ms (toInt32(Infinity)=0 → přeruší hned!)
-    const t = (isFinite(p.duration) && p.duration > 0) ? p.duration + 2 : 12;
-    timer = setTimeout(finish, t * 1000);
+    // fallback: pevný 12 s časovač u ŘEZAL dlouhé kusy (část poslední věty) → odhad z délky TEXTU
+    const t = (isFinite(p.duration) && p.duration > 0)
+      ? p.duration * 1.5 + 3
+      : 90 * parts[i].length / 1000 + 5;
+    timer = setTimeout(finishSafe, t * 1000);
   });
+  // pojistka i bez loadedmetadata (Google TTS někdy metadata nešle) — odhad z textu
+  if (!timer) timer = setTimeout(finishSafe, (90 * parts[i].length / 1000 + 8) * 1000);
   const pp = p.play();
   if (pp) pp.catch(e => {
     // "interrupted by pause/load" = nezávažné (iOS interno) — jen když se opravdu nepovedlo start → ZNOVU
@@ -279,17 +289,19 @@ function restartListening(){
     setTimeout(() => {
       if (listening && !speaking && !recActive) {
         setStatus('🎤 Klepni kamkoli na obrazovku pro pokračování');
+        micBtn.textContent = '🎤 Klepni pro pokračování';
         const go = (ev) => {
           if (!listening || speaking) return;
           document.removeEventListener('touchstart', go);
           document.removeEventListener('click', go);
+          micBtn.textContent = '🎤';
           setStatus('Mluv…');
           startRec();
         };
         document.addEventListener('touchstart', go, { once: true, passive: true });
         document.addEventListener('click', go, { once: true });
       }
-    }, 2500);
+    }, 1500);
   }, 1200);
 }
 
