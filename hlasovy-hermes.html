@@ -217,8 +217,15 @@ let speakTimer = null;    // pravidelný resume — ať se na iOS řeč nezasekn
 function playPartsGoogle(parts, i, myId, tries){   // WebAudio přes proxy mostu (mikrofon žije)
   if (i >= parts.length) { restartListening(); return; }
   tries = tries || 0;
+  /* iOS: po dlouhém čekání (přemýšlení) Safari audio zamkne — resume() SAM O NICH vrací
+     provoz. Kdyby context zůstal suspended i po resume (ne-gesto), POZNA se ve statusu. */
   const ctx = audioCtx();
   if (!ctx) { setStatus('🔊 Nepovedlo se přehrát (audio)'); restartListening(); return; }
+  if (ctx.state === 'suspended') {
+    setStatus('🔇 Klepni kamkoli na obrazovku — Safari zamkl zvuk');
+    const wake = () => { audioCtx(); document.removeEventListener('click', wake); };
+    document.addEventListener('click', wake);
+  }
   setStatus('🔊 Čtu…');
   fetch(ttsProxyUrl(parts[i]), {cache: 'no-store'})
     .then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.arrayBuffer(); })
