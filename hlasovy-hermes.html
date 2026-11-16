@@ -101,8 +101,10 @@ let speakId = 0;          // číslo generace — nová odpověď zruší starý
 let currentUtter = null;  // DRŽENÉ reference — jinak GC přečte jen pár slov (známý bug)
 let speakTimer = null;    // pravidelný resume — ať se na iOS řeč nezasekne po 15 s
 
-function playPartsGoogle(parts, i, myId){   // ZÁLOHA — jen když nativní hlas nefunguje
+function playPartsGoogle(parts, i, myId, tries){   // ZÁLOHA — jen když nativní hlas nefunkční
   if (i >= parts.length) { restartListening(); return; }
+  tries = tries || 0;
+  // CHYBA KUSU: Google TTS občas jeden kus odmítne (404 / síť) — ZNOVU (max 3×), jinak by se "vynechal prostředek odpovědi"
   // ZASTAVÍM všechny předchozí přehrávače — a jejich Timery (jinak hrají 2 hlasy současně)
   activePlayers.forEach(a => { try { a.pause(); } catch(_){} });
   activePlayers = [];
@@ -125,7 +127,12 @@ function playPartsGoogle(parts, i, myId){   // ZÁLOHA — jen když nativní hl
     playPartsGoogle(parts, i + 1, myId);
   };
   p.onended = finish;
-  p.onerror = () => { setStatus('🔊 Nepovedlo se přehrát'); finish(); };
+  p.onerror = () => {
+    if (myId !== speakId) return;
+    if (tries < 3) { setStatus('🔊 Opakuju kus…'); setTimeout(() => { if (myId === speakId) playPartsGoogle(parts, i, myId, tries + 1); }, 800); return; }
+    setStatus('🔊 Nepovedlo se přehrát');
+    finish();
+  };
   p.addEventListener('loadedmetadata', () => {
     // Google TTS stream = duration Infinity → fallback nesmí být 0 ms (toInt32(Infinity)=0 → přeruší hned!)
     const t = (isFinite(p.duration) && p.duration > 0) ? p.duration + 2 : 12;
@@ -133,8 +140,10 @@ function playPartsGoogle(parts, i, myId){   // ZÁLOHA — jen když nativní hl
   });
   const pp = p.play();
   if (pp) pp.catch(e => {
-    // "interrupted by pause/load" = nezávažné (iOS interno) — jen když se opravdu nepovedlo start
+    // "interrupted by pause/load" = nezávažné (iOS interno) — jen když se opravdu nepovedlo start → ZNOVU
     if (e.message && e.message.indexOf('interrupted') >= 0) return;
+    if (myId !== speakId) return;
+    if (tries < 3) { setTimeout(() => { if (myId === speakId) playPartsGoogle(parts, i, myId, tries + 1); }, 800); return; }
     setStatus('🔊 Nepovedlo se přehrát: ' + (e.message||''));
     finish();
   });
@@ -264,7 +273,23 @@ function restartListening(){
   setStatus('Mluv…');
   try { rec && rec.stop(); } catch(_){}
   setTimeout(() => {
-    if (listening) startRec();
+    if (!listening || speaking) return;
+    startRec();
+    // iOS: mikrofon po mluvení NEVŽDY sám naběhne → pojistka: klepni KAMKOLI na obrazovku = pokračování
+    setTimeout(() => {
+      if (listening && !speaking && !recActive) {
+        setStatus('🎤 Klepni kamkoli na obrazovku pro pokračování');
+        const go = (ev) => {
+          if (!listening || speaking) return;
+          document.removeEventListener('touchstart', go);
+          document.removeEventListener('click', go);
+          setStatus('Mluv…');
+          startRec();
+        };
+        document.addEventListener('touchstart', go, { once: true, passive: true });
+        document.addEventListener('click', go, { once: true });
+      }
+    }, 2500);
   }, 1200);
 }
 
