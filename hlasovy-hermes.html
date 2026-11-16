@@ -366,6 +366,21 @@ function testSound(){
 /* === JEDNODUCHÝ FLOW (podle přání Tomáše): mluvíš → odpověď → KLEPNI NA TLAČÍTKO → mluvíš zase ===
    Žádné automatické zapínání poslechu — to na iOS opakovaně selhává. Po odpovědi se poslech
    zastaví a čeká na klepnutí. Klepnutí kamkoli = start poslechu (100 % spolehlivý gesto). */
+/* STT OPRAVY: Safari rozpoznávání pokřiví slova — opravím známé výrazy před odesláním */
+function fixTranscript(t){
+  const fixes = [
+    /* Safari slyší "Hormuzský průliv" jako "horský/horském průlivu" — opravím všechna skloňování */
+    [/horsk\w*\s*pr(u|ů)liv\w*/gi, 'Hormuzském průlivu'],
+    [/hormuzsk\w*\s*pruliv\w*/gi, 'Hormuzském průlivu'],
+    [/hormuz|ormuz/gi, 'Hormuz'],
+    [/hlasov(ý|y|im|ím)\s*(hermes)?/gi, 'hlasový Hermes'],
+    [/st(ě|e)panov/gi, 'Štěpánov'],
+    [/televizni program/gi, 'televizní program'],
+  ];
+  for (const [re, rep] of fixes) t = t.replace(re, rep);
+  return t;
+}
+
 function restartListening(){
   speaking = false;
   recActive = false;
@@ -624,7 +639,9 @@ function startRec(){
   rec.onspeechend = () => { recWatchdog = 0; };
   rec.onresult = (e) => {
     recWatchdog = 0;
-    const t = e.results[e.results.length-1][0].transcript.trim();
+    let t = e.results[e.results.length-1][0].transcript.trim();
+    /* STT OPRAVY: Safari často pokřiví jména/tec. výrazy — opravím před odesláním */
+    t = fixTranscript(t);
     if (t) ask(t);
   };
   rec.onerror = (e) => {
