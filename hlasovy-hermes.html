@@ -159,7 +159,9 @@ function speakNow(text){
   try { rec && rec.stop(); } catch(_){}
   setStatus('🔴 Odpovídám…');
   // 350 ms po rec.stop() — iOS potřebuje uvolnit audio session od mikrofonu
-  setTimeout(() => { if (myId === speakId) speakNative(text, myId); }, 350);
+  // POZOR: iOS Safari po mikrofonu ZABIJE nativní hlas (speechSynthesis) — proto odpověď čteme
+  // POUZE Google TTS (nový Audio per kus — mechanismus v8, ověřený). Nativní hlas jen na test zvuku.
+  setTimeout(() => { if (myId === speakId) playPartsGoogle(splitParts(text), 0, myId); }, 350);
 }
 
 function speakNative(text, myId){
