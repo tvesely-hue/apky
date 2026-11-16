@@ -166,38 +166,46 @@ function speakNative(text, myId){
   if (myId !== speakId) return;
   if (typeof speechSynthesis === 'undefined') { playPartsGoogle(splitParts(text), 0, myId); return; }
   const voice = findCzechVoice();
-  // NATIVNÍ HLAS: celá odpověď najednou — žádné kusy, žádné stahování
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'cs-CZ';
-  if (voice) u.voice = voice;
-  u.rate = 1.0;
-  u.volume = 1.0;
-  currentUtter = u;   // KRITICKÉ: držím referenci — jinak GC přečte jen pár slov
-  let finished = false;
-  const finish = () => {
-    if (finished || myId !== speakId) return;
-    finished = true;
-    if (speakTimer) { clearInterval(speakTimer); speakTimer = null; }
+  const parts = splitParts(text);
+  let idx = 0;
+  let watchdog = null;
+  const done = () => {
+    if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+    if (myId !== speakId) return;
     restartListening();
   };
-  u.onend = finish;
-  u.onerror = (e) => {
-    // nativní hlas selhal → přepnu na Google TTS (fungovala verze 8)
-    if (finished || myId !== speakId) return;
-    finished = true;
-    if (speakTimer) { clearInterval(speakTimer); speakTimer = null; }
-    setStatus('🔊 Záložní hlas…');
-    playPartsGoogle(splitParts(text), 0, myId);
+  const speakNext = () => {
+    if (myId !== speakId) return;
+    if (idx >= parts.length) { done(); return; }
+    const u = new SpeechSynthesisUtterance(parts[idx]);
+    u.lang = 'cs-CZ';
+    if (voice) u.voice = voice;
+    u.rate = 1.0;
+    u.volume = 1.0;
+    currentUtter = u;   // KRITICKÉ: držím referenci — jinak GC přečte jen pár slov
+    const i = idx;
+    let moved = false;
+    const advance = () => {
+      if (moved) return; moved = true;
+      if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+      if (myId !== speakId) return;
+      if (i === parts.length - 1) { done(); return; }
+      idx++;
+      setTimeout(speakNext, 60);
+    };
+    u.onend = advance;
+    u.onerror = advance;
+    // iOS: onend se někdy NIKDY nezavolá → záložní odhad délky (mśród ms/znak + rezerva)
+    const est = 90 * parts[i].length + 3500;
+    watchdog = setTimeout(advance, est);
+    try { speechSynthesis.speak(u); } catch(e){
+      // nativní hlas úplně nefunkční → záloha Google TTS (fungovala verze 8)
+      if (speakTimer) { clearInterval(speakTimer); speakTimer = null; }
+      playPartsGoogle(splitParts(text), 0, myId);
+      return;
+    }
   };
-  // iOS bug: řeč se zasekne po ~15 s — pravidelný pause()+resume() to udrží
-  speakTimer = setInterval(() => {
-    if (myId !== speakId) { clearInterval(speakTimer); speakTimer = null; return; }
-    try { speechSynthesis.pause(); speechSynthesis.resume(); } catch(_){}
-  }, 10000);
-  try { speechSynthesis.speak(u); } catch(e){
-    if (speakTimer) { clearInterval(speakTimer); speakTimer = null; }
-    playPartsGoogle(splitParts(text), 0, myId);
-  }
+  speakNext();
 }
 
 function splitParts(text){
