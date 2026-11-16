@@ -42,11 +42,26 @@
 <div id="chat"></div>
 <div id="status">Klepi jednou na tlačítko — pak už jen mluv</div>
 <footer>
+  <div style="display:flex;gap:8px;width:100%;max-width:480px;align-items:center;">
+    <input id="txtIn" type="text" placeholder="…nebo napiš otázku (vždy funguje)" style="flex:1;padding:12px;border-radius:10px;border:1px solid #444;background:#111;color:#fff;font-size:15px;">
+    <button id="sendBtn" onclick="sendTxt()" style="padding:12px 18px;border-radius:10px;border:none;background:#2b6cb0;color:#fff;font-size:15px;font-weight:bold;">▶</button>
+  </div>
   <button id="micBtn" onclick="toggleMic()">🎤</button>
 </footer>
 
 <script>
 let listening = false, rec = null;
+/* PÍSEMNÁ OTÁZKA — vždy funkční cesta (mikrofon se na iOS Safari po přehrávání občas zabije, to nelze obejít) */
+function sendTxt(){
+  const i = document.getElementById('txtIn');
+  const t = (i.value || '').trim();
+  if (!t) return;
+  i.value = '';
+  ask(t);
+}
+document.getElementById('txtIn').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); sendTxt(); }
+});
 let key = localStorage.getItem('gkey') || '';
 const statusEl = document.getElementById('status');
 
