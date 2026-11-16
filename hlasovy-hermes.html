@@ -305,6 +305,28 @@ function restartListening(){
   }, 1200);
 }
 
+/* GLOBÁLNÍ hlídač poslechu: Safari rozpoznávání po více otázkách potichu zanikne.
+   Každých 5 s: posloucháme? Když ne (a nic nehrá), nabídne KLEPNI PRO POKRAČOVÁNÍ —
+   klepnutí kamkoli restartuje mikrofon. Tohle řeší "po pár otázkách už to nejde". */
+setInterval(() => {
+  if (!listening || speaking || recActive) return;
+  const s = document.getElementById('status')?.textContent || '';
+  if (s.indexOf('Klepni') >= 0) return;   // nabídka už visí
+  setStatus('🎤 Klepni pro pokračování');
+  micBtn.textContent = '🎤 Klepni pro pokračování';
+  const go = (ev) => {
+    if (!listening || speaking) return;
+    document.removeEventListener('touchstart', go);
+    document.removeEventListener('click', go);
+    micBtn.textContent = '🎤';
+    setStatus('Mluv…');
+    recActive = false;
+    startRec();
+  };
+  document.addEventListener('touchstart', go, { once: true, passive: true });
+  document.addEventListener('click', go, { once: true });
+}, 5000);
+
 /* ====== ZPRÁVY / API ====== */
 /* zjištění polohy (GPS) — pro počasí */
 function getPos(){
@@ -493,6 +515,8 @@ function startRec(){
   };
   /* iOS: stejnou instanci po stop() znovu nespustí — VŽDY NOVÁ instance.
      Ale restart jen když instance SKUTEČNĚ naběhla (onstart) — jinak smyčka startRec dokola */
+  /* POROZUMĚNÍ po víc otázkách: Safari rozpoznávání časem zpomalí/zanikne — GLOBÁLNÍ hlídač:
+     každých 5 s zkontroluje, jestli poslech žije; když ne, nabídne KLEPNI PRO POKRAČOVÁNÍ */
   rec.onend = () => {
     const hadStarted = recActive;
     recActive = false;
