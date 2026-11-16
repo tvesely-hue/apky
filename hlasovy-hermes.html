@@ -558,11 +558,12 @@ function micWarmup(){
   });
 }
 
-async function startRec(){
+function startRec(){
   if (speaking) return;   // BĚHEM MLUVENÍ NIKDY NESPUSTÍMIKROFON — iOS přeruší zvuk
   if (recActive) return;  // instance už běží — nezačínat znovu (jinak smyčka startRec)
-  await micWarmup();      // KOMPLETNĚ PROBUDÍ audio session po přehrání — řeší "podruhé nereaguje"
-  await playSilentThenStart();   // NESLYŠITELNÝ zvuk = otevře audio session, pak SR naběhne
+  /* iOS PRAVIDLO: rec.start() musí být zavoláno PŘÍMO v gestu uživatele (klepnutí).
+     Každý await (getUserMedia, tichý zvuk) rozbije řetěz gesta → iOS SR tiše odmítne.
+     Proto ZÁDNÉ awaity před rec.start() — žádný warmup, žádný tichý zvuk. */
   rec = new SR();
   rec.lang = 'cs-CZ';
   rec.continuous = true;
@@ -581,9 +582,10 @@ async function startRec(){
     recWatchdog = 0;
     if (e.error==='not-allowed') addMsg('ai','Musíš povolit mikrofon (Nastavení Safari → Mikrofon).');
     // iOS: po přehrávání zvuku první pokus často selže ('aborted') — SAMO ZKUSÍM ZNOVU (max 4×)
-    else if (e.error==='aborted' && recRetries < 4) {
-      recRetries++;
-      setTimeout(() => { if (listening && !speaking && !recActive) startRec(); }, 800);
+    else if (e.error==='aborted') {
+      /* iOS: start() MUSÍ být v gestu — timer-retry nefunguje. Požádám uživatele o klepnutí. */
+      micBtn.classList.remove('listening');
+      setStatus('⚠️ Klepni na tlačítko ZNOVU (iOS chce gesto)');
       return;
     }
     else if (e.error && e.error !== 'aborted' && e.error !== 'no-speech') setStatus('Mic: ' + e.error);
@@ -596,12 +598,10 @@ async function startRec(){
     const hadStarted = recActive;
     recActive = false;
     if (hadStarted && listening && !speaking) {
-      setTimeout(() => { if (listening && !speaking) startRec().catch(() => {}); }, 700);
+      setTimeout(() => { if (listening && !speaking) startRec(); }, 700);
     }
   };
-  try { rec.start(); } catch(_){
-    setTimeout(() => { if (listening && !speaking) startRec().catch(() => {}); }, 1500);
-  }
+  try { rec.start(); } catch(_){ setStatus('⚠️ Klepni na tlačítko ZNOVU'); }
 }
 
 /* WATCHDOG: když Safari poslech tiše zabije (žádný onend, žádný výsledek), po 15 s ticha ho restartujeme */
@@ -642,12 +642,12 @@ function toggleMic(){
   try { rec && rec.stop(); } catch(_){}
   // KLEPNI KAMKOLI NA OBRAZOVKU (ne jen na tlačítko) — celé tělo dokumentu
   const bodyGo = (ev) => {
-    if (listening && !speaking && !recActive) { startRec().catch(() => {}); }
+    if (listening && !speaking && !recActive) { startRec(); }
   };
   document.addEventListener('touchstart', bodyGo, { passive: true });
   document.addEventListener('click', bodyGo);
   setTimeout(() => {
-    if (listening && !speaking) startRec().catch(e => setStatus('Mic: ' + e.message));
+    if (listening && !speaking) startRec();
     // HLÍDAČ: jestli se mikrofon SKUTEČNĚ zapnul (i s probuzením). Kdyby ne — ZKUSÍM ZNOVU SÁM.
     setTimeout(() => {
       if (listening && !speaking && !recActive) {
