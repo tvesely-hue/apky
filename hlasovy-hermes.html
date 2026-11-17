@@ -480,10 +480,20 @@ async function newsData(){
 
 /* paměť konverzace — appka si pamatuje, co jsme si řekli */
 let history = [];
+let lastAnswer = '';   // poslední odpověď — pro „přečti to znovu“ (okamžitě, bez mostu)
 
 async function ask(text){
   if (!key) { addMsg('ai','Nejdřív vlož OpenRouter key (⚙️ vpravo nahoře).'); speakNow('Nejdřív vlož klíč OpenRouter. Nahoře je ozubené kolo.'); return; }
   addMsg('me', text);
+  /* OPAKOVÁNÍ: „přečti to znovu / ještě jednou / zopakuj to“ → přečtu POSLEDNÍ odpověď
+     okamžitě místně — neposílá se žádná nová otázka přes most (proto to dřív trvalo dlouho). */
+  const rt = text.toLowerCase();
+  if (lastAnswer && /přeč(te|ti|ti to)|znovu|ještě jednou|zopakuj|opakuj|znova|still to same|ještě raz|znovu to povez/.test(rt)
+      && rt.length < 60 && !/program|počas|zprav|cena|kurz|jaky|jakou|kolik|kdy|proč|pro|kdo|co je|co je to|kontakt/.test(rt)) {
+    addMsg('ai', lastAnswer);
+    speakNow(lastAnswer);
+    return;
+  }
   // REŽIM HERMES: otázka jde ke mně přes most; selže-li → GLM záloha.
   // POČASÍ: doplním data I v Hermes režimu (jinak GLM/neubovysětí odpověď nezná počasí)!
   let btext = text;
@@ -513,7 +523,7 @@ async function ask(text){
     micBtn.classList.remove('listening');
     setStatus('🧠 Hermes přemýšlí…');
     const bt = await askBridgeLong(btext);
-    if (bt) { addMsg('ai', bt); speakNow(bt); return; }
+    if (bt) { lastAnswer = bt; addMsg('ai', bt); speakNow(bt); return; }
     /* most po 6 min neodpověděl → chybou nehodí, jen srozumitelně řekne */
     addMsg('ai', 'Nedostal jsem odpověď v čase. Zopakuj otázku, prosím.');
     speakNow('Nedostal jsem odpověď v čase. Zopakuj otázku, prosím.');
@@ -582,6 +592,7 @@ async function ask(text){
     history.push({ role:'user', content: text });
     history.push({ role:'assistant', content: out });
     if (history.length > 12) history = history.slice(-12);
+    lastAnswer = out;
     addMsg('ai', out);
     speakNow(out);
   } catch(e){
